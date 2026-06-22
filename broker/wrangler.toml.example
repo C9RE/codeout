@@ -1,0 +1,17 @@
+name = "codeout-broker"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+routes = [{ pattern = "broker.example.com", custom_domain = true }]
+
+# Your Cloudflare account id and the zone id for your broker's hostname.
+[vars]
+ACCOUNT_ID = "your-cloudflare-account-id"
+ZONE_ID = "your-zone-id"
+PORT = "8400"
+
+# CF_TOKEN (API token with Account.Cloudflare Tunnel:Edit + Zone DNS:Edit) is a SECRET:
+#   wrangler secret put CF_TOKEN
+# Copy this file to wrangler.toml, fill in your ids + hostname, then `wrangler deploy`.
+
+[triggers]
+crons = ["*/15 * * * *"]

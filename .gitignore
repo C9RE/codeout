@@ -1,0 +1,31 @@
+node_modules
+
+# Output
+.output
+.vercel
+.netlify
+.wrangler
+# Built web UI, staged from the sibling webapp by `bun run build` (build artifact).
+/webui
+
+# Logs
+*.log
+daemon.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env / local secrets
+.env
+.env.*
+!.env.example
+!.env.test
+# Broker config carries account/zone ids — keep it local; ship the .example instead.
+broker/wrangler.toml
+# Local daemon state, if ever run from inside the repo
+.codeout/
+config.json
+devices.json
+device-tokens.json
+tunnel.json
