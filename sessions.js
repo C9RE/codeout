@@ -50,6 +50,9 @@ const LOCK_FILE = join(CODEOUT_HOME, 'daemon.lock');
 // Chat scrollback persists here as append-only ndJSON per session, so a daemon
 // restart/crash replays full history to reconnecting clients (not an empty UI).
 const CHAT_LOG_DIR = join(CODEOUT_HOME, 'chat');
+// DEMO: a throwaway cwd for demo sessions (tools are disabled, so nothing runs here — it's just where
+// the chat-only agent nominally lives, kept out of any real project tree).
+const DEMO_CWD = join(CODEOUT_HOME, 'demo-sandbox');
 
 // The user's configured default reasoning effort. Claude reads `effortLevel` from
 // ~/.claude/settings.json when we launch it WITHOUT an explicit --effort, so we read the
@@ -1082,7 +1085,17 @@ function enforceCreateBudget(creatorId) {
  *  `name` defaults to the MODE ("Chat" / "Terminal") so a new tab has a stable label
  *  immediately (no model round-trip); an explicitly-passed name still wins. */
 export function create(cwd = ROOT, agent = 'bash', chatMode = false, creatorId = 'owner', name = null, permissionMode = null) {
-	if (!allowedCwd(cwd)) throw new Error('cwd is not in the allowed project list');
+	// DEMO: force every session to a chat-only claude in a throwaway sandbox — no terminal sessions,
+	// no real cwd. Tools are disabled (claude-chat.js + the permission gate), so the sandbox is just
+	// belt-and-braces. Skip the project-list cwd check since we control the forced cwd.
+	if (DEMO_MODE) {
+		chatMode = true;
+		agent = 'claude';
+		cwd = DEMO_CWD;
+		try { mkdirSync(DEMO_CWD, { recursive: true, mode: 0o700 }); } catch { /* best-effort */ }
+	} else if (!allowedCwd(cwd)) {
+		throw new Error('cwd is not in the allowed project list');
+	}
 	if (!existsSync(cwd)) throw new Error('cwd does not exist');
 	const a = AGENTS.has(agent) ? agent : 'bash';
 	// Budget check is LAST among the cheap guards (after cwd/agent validation) but BEFORE we
@@ -1142,6 +1155,10 @@ export function restoreSessions() {
 }
 
 export const list = () =>
+	// DEMO: never enumerate sessions. Every visitor shares the one baked demo key, so a populated
+	// list would leak other visitors' sessions. The demo app creates a session and enters it directly
+	// (it holds the id); session ids are unguessable UUIDs, so hiding the list isolates visitors.
+	DEMO_MODE ? [] :
 	[...sessions.values()]
 		.map((s) => ({ id: s.id, cwd: s.cwd, agent: s.agent, name: s.name ?? null, avatar: s.avatar ?? null, created: s.created, idleMs: Date.now() - (s.lastOutput || s.created), chatMode: !!s.chatMode, permissionMode: s.permissionMode ?? null, working: !!s.turnLive }))
 		.sort((a, b) => a.created - b.created);
