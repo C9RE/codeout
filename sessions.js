@@ -548,7 +548,7 @@ function wireChat(s, fresh) {
 	const submit = (item) => {
 		try {
 			const ok = s.backend.send(item.agentText ?? item.text);
-			if (ok) turnLive = true; // backend also emits turn:start synchronously; belt + braces
+			if (ok) { turnLive = true; s.turnLive = true; } // backend also emits turn:start synchronously; belt + braces
 			return ok;
 		} catch (e) {
 			emit({ t: 'error', message: 'send failed: ' + (e?.message ?? e) });
@@ -577,9 +577,9 @@ function wireChat(s, fresh) {
 	};
 
 	const onTurnEvent = (ev) => {
-		if (ev.phase === 'start') turnLive = true;
+		if (ev.phase === 'start') { turnLive = true; s.turnLive = true; }
 		else if (ev.phase === 'end') {
-			turnLive = false;
+			turnLive = false; s.turnLive = false;
 			// A turn ended: any still-pending permission prompts from it can never be
 			// answered (the agent already moved on / was interrupted). Resolve them as
 			// denied so nothing leaks and the client can stop showing a live prompt.
@@ -709,7 +709,7 @@ function wireChat(s, fresh) {
 		// 3) tear the old backend down (its kill() no-ops any late events), then start fresh.
 		try { s.backend?.kill(); } catch { /* gone */ }
 		// A relaunch is a clean break: there is no live turn on the new child.
-		turnLive = false;
+		turnLive = false; s.turnLive = false;
 		s.backend = s.startClaudeBackend();
 		persist();
 		return true;
@@ -1095,7 +1095,7 @@ export function restoreSessions() {
 
 export const list = () =>
 	[...sessions.values()]
-		.map((s) => ({ id: s.id, cwd: s.cwd, agent: s.agent, name: s.name ?? null, avatar: s.avatar ?? null, created: s.created, idleMs: Date.now() - (s.lastOutput || s.created), chatMode: !!s.chatMode, permissionMode: s.permissionMode ?? null }))
+		.map((s) => ({ id: s.id, cwd: s.cwd, agent: s.agent, name: s.name ?? null, avatar: s.avatar ?? null, created: s.created, idleMs: Date.now() - (s.lastOutput || s.created), chatMode: !!s.chatMode, permissionMode: s.permissionMode ?? null, working: !!s.turnLive }))
 		.sort((a, b) => a.created - b.created);
 
 export const get = (id) => sessions.get(id);
