@@ -55,6 +55,18 @@ const CHAT_SYSTEM_PROMPT = [
 	'When you ask the user to choose between a small set of discrete options, present the choices as an <options><option>…</option></options> block (one <option> per choice, short labels). The user can tap an option or type their own answer.'
 ].join(' ');
 
+// DEMO mode (CODEOUT_DEMO=1): a public, chat-only demo. Launch claude with NO tools (the permission
+// gate in sessions.js also auto-denies, this just stops it attempting them) and a system addendum that
+// frames it as the demo + tells it to chat only. Tools listed broadly; the gate is the real backstop.
+const DEMO_MODE = process.env.CODEOUT_DEMO === '1';
+const DEMO_DISALLOWED_TOOLS = 'Bash Edit Write MultiEdit NotebookEdit Read Glob Grep LS WebFetch WebSearch Task Agent TodoWrite ExitPlanMode AskUserQuestion KillShell BashOutput';
+const DEMO_SYSTEM_ADDENDUM = [
+	'This is the PUBLIC codeout DEMO. You are chat-only: you have NO tools and cannot run commands, edit',
+	'or read files, or access the machine. Just have a helpful, friendly conversation. If asked to run or',
+	'change something, explain warmly that in the real codeout app you would do it on the user\'s own',
+	'machine, but this demo is conversation-only. Keep replies concise and showcase what codeout feels like.'
+].join(' ');
+
 /**
  * Start (or resume) a Claude chat backend.
  * @param {object} o
@@ -99,7 +111,7 @@ export function startClaudeChat({ cwd, env, resumeId, model, effort, permissionM
 		// Frame the surface as a mobile chat + teach the <options> chip block. APPENDED
 		// to the default system prompt (not --system-prompt), so all the default Claude
 		// Code chat behaviour - tools, permissions, titles, streaming - is preserved.
-		'--append-system-prompt', CHAT_SYSTEM_PROMPT,
+		'--append-system-prompt', DEMO_MODE ? `${CHAT_SYSTEM_PROMPT} ${DEMO_SYSTEM_ADDENDUM}` : CHAT_SYSTEM_PROMPT,
 		// Route tool-permission decisions to us over the stdio control channel (the
 		// can_use_tool control_request handled below). Without a host answer, claude
 		// blocks the tool - which is exactly the approval gate we want.
@@ -110,12 +122,14 @@ export function startClaudeChat({ cwd, env, resumeId, model, effort, permissionM
 		// classifier still auto-allows obviously read-only calls). `bypassPermissions` deliberately
 		// runs every tool without asking - claude never escalates, so the gate simply stays silent
 		// (no conflict with --permission-prompt-tool: there are just no prompts to route).
-		'--permission-mode', permMode,
+		// In demo, force `default` so the gate stays live and auto-denies (never bypassPermissions,
+		// which would skip the gate and run tools). Otherwise the session's chosen posture.
+		'--permission-mode', DEMO_MODE ? 'default' : permMode,
 		// AskUserQuestion is Claude Code's INTERACTIVE multiple-choice picker - a terminal
 		// harness tool with no headless UI, so in chat it leaks as a raw tool-call dump.
 		// Disallow it: the agent asks its question as plain text and the user replies in
 		// the chat (the natural chat pattern, like ChatGPT / claude.ai).
-		'--disallowedTools', 'AskUserQuestion'
+		'--disallowedTools', DEMO_MODE ? DEMO_DISALLOWED_TOOLS : 'AskUserQuestion'
 	];
 	if (resumeId) args.push('--resume', resumeId);
 	// Optional explicit model (the /model switch relaunches with this set). When null

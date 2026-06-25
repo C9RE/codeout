@@ -34,6 +34,13 @@ const CREATE_RATE_MAX = Number(process.env.CODEOUT_CREATE_RATE_MAX) || 10; // cr
 // creator id -> array of create timestamps within the rolling window (owner token: 'owner').
 const createTimes = new Map();
 
+// DEMO MODE: a public, chat-only demo instance (run as a SEPARATE daemon, own port + CODEOUT_HOME +
+// tunnel). When on, the agent is locked to conversation only — no tools, no commands, no terminal
+// sessions — enforced in three layers: claude is launched with all tools disallowed (claude-chat.js),
+// the permission gate auto-denies any tool request (onPermission above), and sessions are forced to a
+// throwaway cwd. Toggle with CODEOUT_DEMO=1. Exported so claude-chat.js shares the same switch.
+export const DEMO_MODE = process.env.CODEOUT_DEMO === '1';
+
 // codeout state: per-session dtach sockets + a metadata file, so sessions survive a
 // daemon restart - the dtach master keeps the agent alive and we reattach on boot.
 const CODEOUT_HOME = process.env.CODEOUT_HOME || join(homedir(), '.codeout');
@@ -621,6 +628,13 @@ function wireChat(s, fresh) {
 
 	// Asked by the claude backend before a tool runs. Resolves to the agent's decision.
 	const onPermission = (req) => {
+		// DEMO lockdown: the public demo is chat-only. DENY every tool request outright, server-side,
+		// no matter what the agent asks for — the load-bearing guarantee that the demo can't run
+		// anything (claude is also launched with all tools disallowed, but this is the backstop).
+		if (DEMO_MODE) {
+			emit({ t: 'permission-resolved', id: req.id, decision: 'deny', auto: true, toolName: req.toolName, reason: 'Tools are disabled in the demo.' });
+			return Promise.resolve({ behavior: 'deny', message: 'This is a chat-only demo — tools and commands are disabled.' });
+		}
 		// Session allow-list: a prior `allow_session` for this tool → allow without prompting.
 		if (allowedTools.has(req.toolName)) {
 			emit({ t: 'permission-resolved', id: req.id, decision: 'allow_session', auto: true, toolName: req.toolName });
