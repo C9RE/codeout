@@ -53,6 +53,14 @@ const CHAT_LOG_DIR = join(CODEOUT_HOME, 'chat');
 // DEMO: a throwaway cwd for demo sessions (tools are disabled, so nothing runs here — it's just where
 // the chat-only agent nominally lives, kept out of any real project tree).
 const DEMO_CWD = join(CODEOUT_HOME, 'demo-sandbox');
+// DEMO: a per-install visitor id the app sends (header `x-codeout-visitor`) so each visitor gets their
+// OWN scoped session list + their own create rate-limit bucket — the shared baked demo key can't tell
+// visitors apart. Sanitized + length-bounded; a missing/garbage value degrades to a shared 'demo:anon'.
+function demoVisitorId(req) {
+	const raw = req?.headers?.['x-codeout-visitor'];
+	const v = typeof raw === 'string' ? raw.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) : '';
+	return v ? `demo:${v}` : 'demo:anon';
+}
 
 // The user's configured default reasoning effort. Claude reads `effortLevel` from
 // ~/.claude/settings.json when we launch it WITHOUT an explicit --effort, so we read the
@@ -1154,12 +1162,12 @@ export function restoreSessions() {
 	try { sweepOrphanUploads(); } catch { /* best-effort */ }
 }
 
-export const list = () =>
-	// DEMO: never enumerate sessions. Every visitor shares the one baked demo key, so a populated
-	// list would leak other visitors' sessions. The demo app creates a session and enters it directly
-	// (it holds the id); session ids are unguessable UUIDs, so hiding the list isolates visitors.
-	DEMO_MODE ? [] :
+// `creatorFilter` (DEMO only) scopes the list to one visitor's own sessions: every demo visitor
+// shares the one baked key, so we separate them by a per-install visitor id (see demoVisitorId).
+// Non-demo passes nothing → the full list, exactly as before.
+export const list = (creatorFilter = null) =>
 	[...sessions.values()]
+		.filter((s) => creatorFilter == null || s.owner === creatorFilter)
 		.map((s) => ({ id: s.id, cwd: s.cwd, agent: s.agent, name: s.name ?? null, avatar: s.avatar ?? null, created: s.created, idleMs: Date.now() - (s.lastOutput || s.created), chatMode: !!s.chatMode, permissionMode: s.permissionMode ?? null, working: !!s.turnLive }))
 		.sort((a, b) => a.created - b.created);
 
@@ -1532,7 +1540,8 @@ export async function handleApi(req, res) {
 		if (req.method === 'GET' && url.pathname === '/api/projects') {
 			send(200, { root: ROOT, projects: listProjects() });
 		} else if (req.method === 'GET' && url.pathname === '/api/sessions') {
-			send(200, { sessions: list() });
+			// DEMO: scope the list to the requesting visitor (they all share the one baked key).
+			send(200, { sessions: list(DEMO_MODE ? demoVisitorId(req) : null) });
 		} else if (req.method === 'GET' && url.pathname === '/api/pair/code') {
 			// Any paired device (not just the owner) can mint a code (add a laptop from your phone).
 			await initCrypto();
@@ -1543,8 +1552,10 @@ export async function handleApi(req, res) {
 		} else if (req.method === 'POST' && url.pathname === '/api/sessions') {
 			const body = await readJson(req);
 			// Attribute the create to the requesting device (for per-device cap + rate). A
-			// device token maps to its device id; the owner token (no device) is 'owner'.
-			const creatorId = deviceIdForToken(bearerToken(req)) || 'owner';
+			// device token maps to its device id; the owner token (no device) is 'owner'. In DEMO,
+			// every visitor shares the one baked key, so attribute to the per-install visitor id
+			// instead — that scopes their session list AND applies the per-device caps PER VISITOR.
+			const creatorId = DEMO_MODE ? demoVisitorId(req) : (deviceIdForToken(bearerToken(req)) || 'owner');
 			try {
 				const explicitName = typeof body.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 40) : null;
 				send(200, create(typeof body.cwd === 'string' && body.cwd ? body.cwd : undefined, body.agent, body.chatMode, creatorId, explicitName, body.permissionMode ?? null));
