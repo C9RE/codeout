@@ -874,7 +874,9 @@ function wireChat(s, fresh) {
 		if (cid) {
 			const prev = seenClientIds.get(cid);
 			if (prev) {
-				emit({ t: 'user', id: prev.id, clientId: cid, text: prev.text, senderId: prev.senderId, senderName: prev.senderName, ...(prev.attachments.length ? { attachments: prev.attachments } : {}) });
+				// A normal turn re-broadcasts its echo; a built-in (recorded as a dedup-only
+				// sentinel with no `id`) just returns so a retried /model|/clear can't re-run.
+				if (prev.id) emit({ t: 'user', id: prev.id, clientId: cid, text: prev.text, senderId: prev.senderId, senderName: prev.senderName, ...(prev.attachments.length ? { attachments: prev.attachments } : {}) });
 				return;
 			}
 		}
@@ -882,6 +884,12 @@ function wireChat(s, fresh) {
 		// Built-ins only apply to claude chat; for other agents they fall through as plain text.
 		// (Slash built-ins never carry attachments - they're typed commands.)
 		if (s.agent === 'claude' && atts.length === 0) {
+			// Record the clientId BEFORE running a built-in so a retry is deduped (built-ins emit
+			// their own user echo + relaunch; re-running would double-relaunch / re-wipe).
+			if (cid && /^\/(model|effort|mode|clear)(\s|$)/.test(clean)) {
+				seenClientIds.set(cid, { id: null });
+				if (seenClientIds.size > SEEN_CLIENT_IDS_CAP) seenClientIds.delete(seenClientIds.keys().next().value);
+			}
 			const mm = clean.match(/^\/model(?:\s+(.+))?$/);
 			if (mm) { switchModel(mm[1] || '', senderId, senderName); return; }
 			const em = clean.match(/^\/effort(?:\s+(.+))?$/);
@@ -921,13 +929,18 @@ function wireChat(s, fresh) {
 	s.handleInterrupt = () => {
 		if (!s.turnLive) return;
 		if (s.resumeId) {
-			relaunchBackend();                   // kill the generating child + --resume; clears turnLive
+			// Fold any /model|/effort|/mode queued mid-turn into THIS relaunch (applyPendingControl
+			// does the kill+resume itself + clears pendingControl), so Stop doesn't spawn the backend
+			// twice — the turn:end below would otherwise apply it as a second relaunch.
+			if (pendingControl) applyPendingControl();
+			else relaunchBackend();              // kill the generating child + --resume; clears turnLive
 			emit({ t: 'system', text: 'Stopped.' });
 		} else {
 			// Stopped before claude returned a session id (the brief boot window before the
 			// `init` line) - there is nothing to --resume. Reset cleanly: a plain relaunch here
 			// would spin up a fresh, empty-context child while the chat log still showed the
 			// just-started message, silently discarding it. resetHistory keeps display + child in sync.
+			pendingControl = null;               // a queued switch on a discarded boot turn is moot
 			relaunchBackend({ resetHistory: true });
 			emit({ t: 'system', text: 'Stopped before the reply started, nothing was saved yet. Send your message again.' });
 		}
