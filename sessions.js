@@ -59,7 +59,11 @@ const DEMO_CWD = join(CODEOUT_HOME, 'demo-sandbox');
 function demoVisitorId(req) {
 	const raw = req?.headers?.['x-codeout-visitor'];
 	const v = typeof raw === 'string' ? raw.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) : '';
-	return v ? `demo:${v}` : 'demo:anon';
+	if (v) return `demo:${v}`;
+	// No explicit header (e.g. a reviewer pairing normally) → scope by their paired device id, so
+	// each demo device gets its OWN sessions + rate bucket, exactly like the normal per-device model.
+	const did = deviceIdForToken(bearerToken(req));
+	return did ? `demo-dev:${did}` : 'demo:anon';
 }
 
 // The user's configured default reasoning effort. Claude reads `effortLevel` from

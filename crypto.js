@@ -159,9 +159,18 @@ export function mintPairCode() {
 export function daemonFingerprint() {
 	return formatPairCode(toBase32(sodium.crypto_generichash(10, loadIdentity().publicKey)).slice(0, 8)); // XXXX-XXXX
 }
+// DEMO: a fixed, NON-EXPIRING, REUSABLE pairing code so an App Store reviewer can pair to the demo
+// daemon whenever they get to it (normal codes are single-use + 5-min TTL). Only active in DEMO_MODE.
+// Set CODEOUT_DEMO_PAIR_CODE on the demo unit; this is the normalized form the app must send.
+const DEMO_PAIR_CODE = process.env.CODEOUT_DEMO === '1'
+	? normalizePairCode(process.env.CODEOUT_DEMO_PAIR_CODE || 'CODEOUTDEMO0')
+	: null;
+
 /** Verify + consume a one-time pairing code (single-use, must be unexpired). */
 export function consumePairCode(code) {
 	const key = normalizePairCode(code);
+	// The demo's fixed code always validates and is never consumed (reviewers can re-pair any time).
+	if (DEMO_PAIR_CODE && key === DEMO_PAIR_CODE) return true;
 	const exp = pairCodes.get(key);
 	if (exp == null) return false;
 	pairCodes.delete(key); // single-use, even on failure
