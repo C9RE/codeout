@@ -913,6 +913,18 @@ function wireChat(s, fresh) {
 		drain();
 	};
 
+	// Stop the in-flight turn (the composer's Stop button). The bare CLI exposes no soft
+	// interrupt, so we abort by tearing the backend down and relaunching it with --resume
+	// (the conversation is preserved; whatever already streamed stays in the chat). Then we
+	// emit turn:end so clients clear the "working" state and any queued message drains into
+	// the fresh child. No-op if nothing is running.
+	s.handleInterrupt = () => {
+		if (!s.turnLive) return;
+		relaunchBackend();                       // kill the generating child + resume; clears turnLive
+		emit({ t: 'system', text: 'Stopped.' });
+		emit({ t: 'turn', phase: 'end' });       // clear clients' spinner + drain the queue
+	};
+
 	return s;
 }
 

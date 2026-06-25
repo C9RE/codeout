@@ -34,6 +34,7 @@ const u8 = (raw) => new Uint8Array(Buffer.isBuffer(raw) ? raw : Buffer.from(raw)
 function routeChatEvent(s, ev, self, senderId, senderName) {
 	if (!ev || typeof ev !== 'object') return;
 	if (ev.t === 'permission-reply') { s.handlePermissionReply?.(ev.id, ev.decision); return; }
+	if (ev.t === 'interrupt') { s.handleInterrupt?.(); return; }
 	if (ev.t === 'user') {
 		// A structured user turn (carries attachments and/or a clientId idempotency key). Feed it
 		// through the same queue/echo path as a raw input frame; the daemon broadcasts the stamped
