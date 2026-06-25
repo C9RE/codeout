@@ -1208,6 +1208,19 @@ export function kill(id) {
 	return true;
 }
 
+// DEMO: reap idle demo sessions so abandoned chats (a visitor closed the app) don't pile up + keep
+// a claude child alive. Idle = no agent output for DEMO_SESSION_TTL_MS (default 30 min). Off when not
+// in demo. `.unref()` so the timer never holds the process open.
+const DEMO_SESSION_TTL_MS = Number(process.env.CODEOUT_DEMO_SESSION_TTL_MS) || 30 * 60 * 1000;
+if (DEMO_MODE) {
+	setInterval(() => {
+		const cutoff = Date.now() - DEMO_SESSION_TTL_MS;
+		for (const s of [...sessions.values()]) {
+			if ((s.lastOutput || s.created) < cutoff) { try { kill(s.id); } catch { /* ignore */ } }
+		}
+	}, 5 * 60 * 1000).unref();
+}
+
 /** Rename a session's tab (empty/blank clears back to the folder name). */
 export function rename(id, name) {
 	const s = sessions.get(id);
