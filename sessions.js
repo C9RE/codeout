@@ -920,8 +920,17 @@ function wireChat(s, fresh) {
 	// the fresh child. No-op if nothing is running.
 	s.handleInterrupt = () => {
 		if (!s.turnLive) return;
-		relaunchBackend();                       // kill the generating child + resume; clears turnLive
-		emit({ t: 'system', text: 'Stopped.' });
+		if (s.resumeId) {
+			relaunchBackend();                   // kill the generating child + --resume; clears turnLive
+			emit({ t: 'system', text: 'Stopped.' });
+		} else {
+			// Stopped before claude returned a session id (the brief boot window before the
+			// `init` line) - there is nothing to --resume. Reset cleanly: a plain relaunch here
+			// would spin up a fresh, empty-context child while the chat log still showed the
+			// just-started message, silently discarding it. resetHistory keeps display + child in sync.
+			relaunchBackend({ resetHistory: true });
+			emit({ t: 'system', text: 'Stopped before the reply started, nothing was saved yet. Send your message again.' });
+		}
 		emit({ t: 'turn', phase: 'end' });       // clear clients' spinner + drain the queue
 	};
 

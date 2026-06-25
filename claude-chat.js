@@ -372,6 +372,17 @@ export function startClaudeChat({ cwd, env, resumeId, model, effort, permissionM
 		try { child.off('exit', onExit); } catch { /* ignore */ }
 		try { child.stdin.end(); } catch { /* ignore */ }
 		try { child.kill('SIGTERM'); } catch { /* ignore */ }
+		// SIGTERM can be ignored by a wedged or mid-generation `claude`, which would keep it
+		// running - and billing - after a Stop while the UI says stopped. Escalate to SIGKILL if
+		// it hasn't exited shortly. The timer is unref'd so it never holds the daemon open, and is
+		// cleared on a clean exit.
+		try {
+			const hard = setTimeout(() => {
+				try { if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); } catch { /* ignore */ }
+			}, 2000);
+			hard.unref?.();
+			child.once('exit', () => { try { clearTimeout(hard); } catch { /* ignore */ } });
+		} catch { /* ignore */ }
 	}
 
 	return { send, kill, child };
