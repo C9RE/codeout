@@ -29,3 +29,6 @@ config.json
 devices.json
 device-tokens.json
 tunnel.json
+
+# Pre-edit safety copies (verified against HEAD before deletion)
+*.bak-*

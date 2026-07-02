@@ -29,25 +29,81 @@ agent still remembers. The on-disk log is dropped when the session is killed.
 order by `seq` and gap-detect on it rather than trusting raw arrival/broadcast order.
 `seq` is present on all events below (omitted from the shapes for brevity).
 
+**`ts`, every event carries one too.** The daemon stamps epoch-milliseconds `ts` on every
+event at emit time. Clients use it for day/time separators and "how long did this take"
+displays. Like `seq`, omitted from the shapes below. (Caveat: a clientId retry
+re-broadcast and a queued-clear re-emit carry a FRESH `ts` — clients that already show
+the message should keep their original timestamp, not adopt the new one.)
+
+**Incremental replay: `?sinceSeq=N`.** The attach replay normally sends the whole
+retained log. A client that kept a local transcript cache can pass `sinceSeq` in the
+WebSocket query string to get only events with `seq > N`. If the requested seq has been
+evicted from the bounded ring, the replay silently starts at the ring head — clients must
+gap-detect (their cache's max seq + 1 vs the first replayed seq) and fall back to a full
+refetch when the delta doesn't join.
+
 ## ChatEvent (discriminated by `t`)
 
 Every event also carries `seq` (monotonic per session), omitted here for brevity.
 
 ```
-{ t:"user",     id, text, senderName?, senderId?, queued?:bool, attachments?:[{name,path,size,type}] }  // a user message, echoed to all clients
+{ t:"user",     id, text, senderName?, senderId?, queued?:bool, clientId?:string, attachments?:[{name,path,size,type}] }  // a user message, echoed to all clients
 { t:"text",     id, text, final?:bool, parent?:string }   // assistant prose; stream deltas share an id, final closes it
 { t:"thinking", id, text, final?:bool, parent?:string }   // assistant reasoning (client renders collapsed)
 { t:"tool",     id, name, title?, input?, status:"running"|"ok"|"error", output?, parent?:string }  // one per state change, pair by id
 { t:"turn",     phase:"start"|"end", status? }            // turn boundaries -> drive the thinking indicator
-{ t:"title",    title }                                   // session title update
+{ t:"title",    title }                                   // session title update (soft-deprecated: clients only adopt it when the session has no name yet)
 { t:"error",    message }                                 // surfaced to the user
-{ t:"system",   text }                                    // optional init note (model, cwd); also model/effort/mode/clear notices
+{ t:"system",   text }                                    // optional init note (model, cwd); also model/effort/mode/clear/Stop notices
 { t:"slash-commands", commands:[...], builtins:[{name,description}] }  // agent's `/` commands + daemon built-ins, for autocomplete
 { t:"permission", id, toolName, input, options:[{id,label,kind}] }  // tool wants approval; BLOCKS until reply
 { t:"permission-resolved", id, decision, auto?:bool, reason? }      // the gate settled (replay shows resolved state)
-{ t:"stats", model, contextWindow, effort, permissionMode, costUsd, ctxTokens, rateLimits:[{type,status,resetsAt}] }  // status-bar meta
+{ t:"stats", model, contextWindow, effort, permissionMode, costUsd, ctxTokens, apiKeySource, rateLimits:[{type,status,resetsAt}] }  // status-bar meta
 { t:"chat-cleared" }                                      // /clear wiped the conversation; client resets transcript to empty
 ```
+
+`stats.apiKeySource` says how the agent authenticates (`"none"` = subscription/OAuth).
+Clients hide the cost readout unless it's a real API key — subscription usage has no
+per-token dollar cost, so showing `costUsd` there would be misleading.
+
+## Client → daemon (structured `0x03` up-frames)
+
+A plain user turn is a raw `0x00` input frame (see PROTOCOL.md). Structured client sends
+use the same `{ "type":"chat", "ev": ... }` envelope, routed by the bridge:
+
+```
+{ t:"user", text, clientId?, attachments? }   // structured user turn (needed for attachments / retry idempotency)
+{ t:"permission-reply", id, decision }        // answer an open permission gate
+{ t:"interrupt" }                             // Stop button: abort the live turn
+```
+
+Anything else (e.g. `typing:start` / `typing:stop` presence) is re-broadcast verbatim to
+the session's OTHER clients — client-to-client sync with no daemon handling.
+
+**`clientId` retry idempotency.** A client stamps each optimistic send with its local
+bubble id as `clientId`. The daemon remembers accepted clientIds: a RESENT clientId never
+runs a second turn — it re-broadcasts the original `{t:"user"}` echo (fresh `seq`, so a
+client past its high-water mark still sees it). The echo always carries the `clientId`
+back, so the sender reconciles its optimistic bubble deterministically instead of
+content-matching. Retried slash built-ins (`/model` etc.) are deduped the same way.
+
+**`interrupt` (Stop).** Aborts the live turn: the daemon kills the agent child (SIGTERM,
+2s SIGKILL escalation), emits a synthetic `{t:"turn", phase:"end"}` plus a `{t:"system"}`
+"Stopped." notice, and relaunches with `--resume` so context survives. A queued control
+change (`/model` sent mid-turn) folds into that single relaunch. Interrupting the first
+turn of a fresh session (no resume id yet) resets honestly to a fresh chat.
+
+## Sessions list: `working` + `lastSeq`
+
+`GET /api/sessions` items carry two chat-status fields: `working` (a turn is live right
+now — drive a "busy" indicator) and `lastSeq` (newest retained chat seq, `null` for
+terminal sessions). A client that stores the last seq it SAW per session can badge unread
+sessions (`lastSeq > seen`). Caveat: retry/queued re-emits bump `lastSeq` without new
+content, so an occasional false-positive unread is possible; clients keying read receipts
+on open/leave absorb this.
+
+The daemon also broadcasts `{ "type":"rename", "name", "avatar" }` (a top-level frame,
+not a ChatEvent) to a session's clients when its name or avatar changes.
 
 **`parent` (subagent nesting).** When Claude spawns a subagent via the `Task` tool, the
 subagent's `text` / `thinking` / `tool` events carry `parent` = the `Task` tool's
@@ -58,7 +114,9 @@ nested inside the Task card. The `Task` tool event itself is top-level (no `pare
 ## Rules
 
 - **Thinking indicator** is ON between `turn:start` and `turn:end`, NOT keyed to a single
-  message type. Also clears on `error`. Add a client-side safety timeout.
+  message type. Also clears on `error`. Add a client-side safety timeout. (In practice
+  both shipped clients also clear it as soon as visible content streams, and re-arm it
+  after a finished tool — that reads better than a chip sitting next to live text.)
 - **Text streaming:** emit `{t:"text", id, text}` deltas with the same `id` as tokens
   arrive, then `{t:"text", id, final:true}`. Clients append by id, not replace.
 - **History:** bounded ring (e.g. last N events or M bytes) per session; replay on attach.
