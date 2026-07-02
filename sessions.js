@@ -554,6 +554,9 @@ function wireChat(s, fresh) {
 	// Events echoed with `queued:true` that still need their status cleared once submitted.
 	/** @type {Array<{id:string, text:string, attachments?:Array<object>, senderId?:string, senderName?:string, clientId?:string}>} */
 	const queuedEvents = [];
+	// Throttle for the "backend not accepting input" notice — drain retries on every
+	// activity tick, and a dead child would otherwise spam an error per retry.
+	let lastDrainErrorAt = 0;
 	// Idempotency for optimistic-send retries: a client stamps each user turn with a
 	// `clientId` (its optimistic-bubble id). Resending the SAME clientId (a retry of a turn
 	// the client thought was lost) must NEVER run the turn twice. We keep the last few
@@ -590,8 +593,18 @@ function wireChat(s, fresh) {
 		const ok = submit(item);
 		if (!ok) {
 			// Backend refused: put it back at the head and stop draining; we'll retry on the
-			// next turn:end / activity. Nothing is silently dropped.
+			// next turn:end / activity. Nothing is silently dropped — including the queued
+			// echo, which must survive too or the eventual successful submit can't clear
+			// the client's "queued" pill.
 			queue.unshift(item);
+			if (qe) queuedEvents.unshift(qe);
+			// Say so (throttled): a dead agent otherwise reads as "queued forever" with no
+			// hint that /clear or /model would relaunch it. send() only returns false when
+			// the child is killed/unwritable, so this never fires on mere backpressure.
+			if (Date.now() - lastDrainErrorAt > 30_000) {
+				lastDrainErrorAt = Date.now();
+				emit({ t: 'error', message: 'The agent process is not accepting input. Send /clear or /model to relaunch it.' });
+			}
 			return;
 		}
 		// Submitted: tell clients this message is no longer queued (status cleared).
@@ -1172,7 +1185,7 @@ export function restoreSessions() {
 export const list = (creatorFilter = null) =>
 	[...sessions.values()]
 		.filter((s) => creatorFilter == null || s.owner === creatorFilter)
-		.map((s) => ({ id: s.id, cwd: s.cwd, agent: s.agent, name: s.name ?? null, avatar: s.avatar ?? null, created: s.created, idleMs: Date.now() - (s.lastOutput || s.created), chatMode: !!s.chatMode, permissionMode: s.permissionMode ?? null, working: !!s.turnLive }))
+		.map((s) => ({ id: s.id, cwd: s.cwd, agent: s.agent, name: s.name ?? null, avatar: s.avatar ?? null, created: s.created, idleMs: Date.now() - (s.lastOutput || s.created), chatMode: !!s.chatMode, permissionMode: s.permissionMode ?? null, working: !!s.turnLive, lastSeq: s.chatLog ? s.chatLog.lastSeq() : null }))
 		.sort((a, b) => a.created - b.created);
 
 export const get = (id) => sessions.get(id);

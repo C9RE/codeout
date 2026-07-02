@@ -58,6 +58,17 @@ export class ChatLog {
 	}
 
 	/**
+	 * Highest `seq` currently retained, or null if empty. The newest event is always at
+	 * the tail (eviction drops the oldest from the front), so the tail's seq is the true
+	 * high-water mark even after the ring caps. Cheap O(1) read — used by the sessions
+	 * list so a client can flag a session whose latest event is past its last-seen seq.
+	 */
+	lastSeq() {
+		const it = this.items[this.items.length - 1];
+		return it && typeof it.ev.seq === 'number' ? it.ev.seq : null;
+	}
+
+	/**
 	 * Retained ChatEvents with `seq` GREATER THAN `seq` (exclusive), oldest first — for
 	 * incremental replay when a client reconnects with a locally-cached transcript and only
 	 * needs what it's missing. A null/undefined/NaN `seq` returns everything (same as all()),
