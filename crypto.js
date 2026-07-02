@@ -113,18 +113,34 @@ export function devicePublicKey(id) { const d = loadDevices(); return d[id]?.pk 
 export function setDevicePush(id, token, env) {
 	const d = loadDevices();
 	if (!d[id]) return false;
-	if (token) { d[id].pushToken = token; d[id].apnsEnv = env || 'production'; }
-	else { delete d[id].pushToken; delete d[id].apnsEnv; }
+	if (token) {
+		// An APNs token belongs to exactly one install. If an earlier pairing of the SAME
+		// phone (a different device identity) still carries it, drop it there so the phone
+		// can't end up a push target twice and get duplicate notifications.
+		for (const [other, r] of Object.entries(d)) {
+			if (other !== id && r.pushToken === token) { delete r.pushToken; delete r.apnsEnv; }
+		}
+		d[id].pushToken = token; d[id].apnsEnv = env || 'production';
+	} else { delete d[id].pushToken; delete d[id].apnsEnv; }
 	saveDevices(d);
 	return true;
 }
 export function clearDevicePush(id) { return setDevicePush(id, null); }
-/** Devices that have a push token, for fan-out; optionally exclude one (the sender). */
+/** Devices that have a push token, for fan-out; optionally exclude one (the sender).
+ *  Deduped by token: one phone re-paired under several identities shares ONE APNs
+ *  token, and APNs collapse only de-dups per token, so without this it would receive
+ *  N copies of every alert. Belt-and-suspenders with setDevicePush's cleanup. */
 export function pushTargets(excludeId) {
 	const d = loadDevices();
-	return Object.entries(d)
-		.filter(([id, r]) => r.pushToken && id !== excludeId)
-		.map(([id, r]) => ({ id, token: r.pushToken, env: r.apnsEnv || 'production' }));
+	const seen = new Set();
+	const out = [];
+	for (const [id, r] of Object.entries(d)) {
+		if (!r.pushToken || id === excludeId) continue;
+		if (seen.has(r.pushToken)) continue;   // same token (same phone, re-paired) — one push only
+		seen.add(r.pushToken);
+		out.push({ id, token: r.pushToken, env: r.apnsEnv || 'production' });
+	}
+	return out;
 }
 
 // ---- One-time pairing codes (in-memory, single-use, 5-min TTL) ----
