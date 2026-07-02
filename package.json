@@ -1,6 +1,6 @@
 {
 	"name": "codeoutcli",
-	"version": "1.2.1",
+	"version": "1.3.0",
 	"type": "module",
 	"description": "Self-hosted GUI for your AI coding agents. Run Claude or a shell on your own machine and drive it from your phone or browser, end-to-end encrypted.",
 	"license": "MIT",
@@ -26,6 +26,7 @@
 		"server.js",
 		"build-webui.mjs",
 		"sessions.js",
+		"archive.js",
 		"crypto.js",
 		"auth.js",
 		"pty-bridge.js",
