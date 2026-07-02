@@ -75,6 +75,8 @@ const DEMO_SYSTEM_ADDENDUM = [
  * @param {string|null} o.resumeId     prior session_id to `--resume`, or null for fresh
  * @param {string|null} [o.model]      model id for `--model` (null = the user's default)
  * @param {string|null} [o.effort]     effort level for `--effort` (low|medium|high|xhigh|max; null = default)
+ * @param {string|null} [o.extraSystemPrompt]  extra text appended AFTER the chat nudge
+ *        (archive-reopen summary injection) — rides the same --append-system-prompt flag
  * @param {string} [o.permissionMode]  permission posture for `--permission-mode`
  *        (default|acceptEdits|plan|bypassPermissions; defaults to 'default'). The /mode switch
  *        relaunches with this set. `bypassPermissions` runs every tool without asking (the
@@ -89,7 +91,7 @@ const DEMO_SYSTEM_ADDENDUM = [
  *        If omitted, every tool is allowed (back-compat with the old auto-run behaviour).
  * @returns {{ send:(text:string)=>boolean, kill:()=>void, child:import('node:child_process').ChildProcess }}
  */
-export function startClaudeChat({ cwd, env, resumeId, model, effort, permissionMode, emit: rawEmit, onSessionId, onSlashCommands, onMeta, onPermission }) {
+export function startClaudeChat({ cwd, env, resumeId, model, effort, permissionMode, extraSystemPrompt, emit: rawEmit, onSessionId, onSlashCommands, onMeta, onPermission }) {
 	// Permission posture for this launch. `default` keeps the interactive gate; `acceptEdits`
 	// auto-applies edits but still escalates commands; `plan` is read-only; `bypassPermissions`
 	// runs everything without asking. Defaults to `default` (back-compat with the old hardcode).
@@ -111,7 +113,10 @@ export function startClaudeChat({ cwd, env, resumeId, model, effort, permissionM
 		// Frame the surface as a mobile chat + teach the <options> chip block. APPENDED
 		// to the default system prompt (not --system-prompt), so all the default Claude
 		// Code chat behaviour - tools, permissions, titles, streaming - is preserved.
-		'--append-system-prompt', DEMO_MODE ? `${CHAT_SYSTEM_PROMPT} ${DEMO_SYSTEM_ADDENDUM}` : CHAT_SYSTEM_PROMPT,
+		'--append-system-prompt', [
+			DEMO_MODE ? `${CHAT_SYSTEM_PROMPT} ${DEMO_SYSTEM_ADDENDUM}` : CHAT_SYSTEM_PROMPT,
+			extraSystemPrompt || null   // archive-reopen summary, when present
+		].filter(Boolean).join('\n\n'),
 		// Route tool-permission decisions to us over the stdio control channel (the
 		// can_use_tool control_request handled below). Without a host answer, claude
 		// blocks the tool - which is exactly the approval gate we want.

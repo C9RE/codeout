@@ -105,6 +105,34 @@ on open/leave absorb this.
 The daemon also broadcasts `{ "type":"rename", "name", "avatar" }` (a top-level frame,
 not a ChatEvent) to a session's clients when its name or avatar changes.
 
+## Archive lifecycle (chat sessions)
+
+Archiving replaces killing for chat sessions: the agent ends but the transcript,
+uploads, and a generated summary survive under `~/.codeout/archive/<id>/`. Deleting an
+archive is the one true kill. Terminal sessions still use `DELETE /api/sessions/:id`.
+
+```
+POST   /api/sessions/:id/archive   -> meta            end the agent, keep the chat; summary generates async
+GET    /api/archive                -> {archives:[…]}  metas WITHOUT summary text (name, cwd, agent, dates, size, summaryStatus)
+GET    /api/archive/:id            -> meta            full record incl. `summary` (for the reopen sheet)
+POST   /api/archive/:id/reopen     -> create() result body {mode:"summary"|"resume"}; default "summary"
+DELETE /api/archive/:id            -> {ok}            permanent — removes transcript + uploads + summary
+```
+
+**Reopen semantics.** `"summary"` (default) creates a FRESH session in the same
+cwd/agent/model whose system prompt is extended with the archived summary; the new chat
+opens with a `{t:"system"}` event showing exactly what was injected ("Reopened from
+archive — summary injected: …"). A still-pending summary is generated at reopen (the
+call blocks up to the summarizer timeout). `"resume"` relaunches with claude's native
+`--resume <resumeId>` for full conversational fidelity (heavier context) when the id
+still resolves. The archived transcript is never replayed into the new session's log.
+
+Summaries are one-shot `claude -p --model haiku` runs over a compacted transcript
+(user turns + final assistant prose + one-line tool labels; thinking excluded).
+`summaryStatus` is `"pending"` until it lands; failures stay pending and retry at
+reopen. All endpoints are Bearer device/owner like the rest of the API; everything is
+403 in DEMO mode.
+
 **`parent` (subagent nesting).** When Claude spawns a subagent via the `Task` tool, the
 subagent's `text` / `thinking` / `tool` events carry `parent` = the `Task` tool's
 `tool_use` id (the same id as that `Task` tool event). `parent` is ABSENT on top-level

@@ -15,6 +15,7 @@ import { sendPush, apnsEnabled } from './apns.js';
 import { closeDeviceConnections } from './pty-bridge.js';
 import { PersistentChatLog, evId } from './chat-events.js';
 import { startClaudeChat } from './claude-chat.js';
+import { archiveMove, listArchives, readArchiveMeta, deleteArchive, summarize } from './archive.js';
 
 const MAX_BUFFER = 256 * 1024; // recent output replayed on reattach (for redraw)
 const MAX_UPLOAD = Number(process.env.COCKPIT_MAX_UPLOAD) || 100 * 1024 * 1024; // 100 MB/file cap
@@ -322,7 +323,7 @@ function persist() {
 	try {
 		mkdirSync(CODEOUT_HOME, { recursive: true, mode: 0o700 });
 		const meta = [...sessions.values()].map((s) => ({
-			id: s.id, cwd: s.cwd, agent: s.agent, name: s.name, avatar: s.avatar ?? null, socket: s.socket, created: s.created, chatMode: s.chatMode, resumeId: s.resumeId, model: s.model, effort: s.effort, permissionMode: s.permissionMode, owner: s.owner
+			id: s.id, cwd: s.cwd, agent: s.agent, name: s.name, avatar: s.avatar ?? null, socket: s.socket, created: s.created, chatMode: s.chatMode, resumeId: s.resumeId, model: s.model, effort: s.effort, permissionMode: s.permissionMode, owner: s.owner, seedSummary: s.seedSummary ?? null
 		}));
 		writeFileSync(STATE_FILE, JSON.stringify(meta, null, 2), { mode: 0o600 });
 	} catch (e) {
@@ -708,7 +709,10 @@ function wireChat(s, fresh) {
 		// continues with the model swapped. Pulls resumeId/model off the session each time.
 		s.startClaudeBackend = () => startClaudeChat({
 			cwd: s.cwd, env, resumeId: s.resumeId || null, model: s.model || null, effort: s.effort || null,
-			permissionMode: s.permissionMode || DEFAULT_PERMISSION_MODE, emit,
+			permissionMode: s.permissionMode || DEFAULT_PERMISSION_MODE,
+			// A session reopened from the archive carries the previous conversation's
+			// summary — appended to the system prompt so the agent starts with context.
+			extraSystemPrompt: s.seedSummary || null, emit,
 			onSessionId: onResume, onSlashCommands, onMeta, onPermission
 		});
 		s.backend = s.startClaudeBackend();
@@ -740,8 +744,10 @@ function wireChat(s, fresh) {
 		if (permissionMode !== undefined) s.permissionMode = permissionMode;
 		if (resetHistory) {
 			// Forget the resume id so the relaunch is a brand-new claude session, and clear the
-			// persisted scrollback (in-memory ring + on-disk ndJSON).
+			// persisted scrollback (in-memory ring + on-disk ndJSON). An archive-reopen summary
+			// is part of that history — /clear means FRESH, so drop it too.
 			s.resumeId = null;
+			s.seedSummary = null;
 			try { s.chatLog?.clear?.(); } catch { /* ignore */ }
 			if (s._statsReset) s._statsReset();
 		}
@@ -1109,7 +1115,7 @@ function enforceCreateBudget(creatorId) {
  *  the requesting device id (or 'owner') for the create budget + per-device accounting.
  *  `name` defaults to the MODE ("Chat" / "Terminal") so a new tab has a stable label
  *  immediately (no model round-trip); an explicitly-passed name still wins. */
-export function create(cwd = ROOT, agent = 'bash', chatMode = false, creatorId = 'owner', name = null, permissionMode = null) {
+export function create(cwd = ROOT, agent = 'bash', chatMode = false, creatorId = 'owner', name = null, permissionMode = null, opts = {}) {
 	// DEMO: force every session to a chat-only claude in a throwaway sandbox — no terminal sessions,
 	// no real cwd. Tools are disabled (claude-chat.js + the permission gate), so the sandbox is just
 	// belt-and-braces. Skip the project-list cwd check since we control the forced cwd.
@@ -1135,6 +1141,12 @@ export function create(cwd = ROOT, agent = 'bash', chatMode = false, creatorId =
 	const permMode = validatePermissionMode(permissionMode) || readDefaultPermissionMode();
 	/** @type {Session} */
 	const s = { id, cwd, agent: a, name: name || (chatMode ? 'Chat' : 'Terminal'), avatar: null, socket: join(SOCKET_DIR, id), created: Date.now(), pty: null, buffer: [], clients: new Set(), chatMode: !!chatMode, permissionMode: permMode, owner: creatorId };
+	// Archive-reopen seeding — set BEFORE wire() so the first backend launch carries it:
+	// seedSummary rides --append-system-prompt; resumeId makes it a native full resume.
+	if (chatMode && typeof opts.seedSummary === 'string' && opts.seedSummary) s.seedSummary = opts.seedSummary;
+	if (chatMode && typeof opts.resumeId === 'string' && opts.resumeId) s.resumeId = opts.resumeId;
+	if (chatMode && typeof opts.model === 'string' && opts.model) s.model = opts.model;
+	if (chatMode && typeof opts.effort === 'string' && opts.effort) s.effort = opts.effort;
 	wire(s, true);
 	sessions.set(id, s);
 	persist();
@@ -1163,7 +1175,7 @@ export function restoreSessions() {
 			// /clear nulls resumeId; relaunch it clean (null resumeId → fresh claude session).
 			if (!m.resumeId && !(typeof m.name === 'string' && m.name.trim())) continue;
 			/** @type {Session} */
-			const s = { id: m.id, cwd: m.cwd, agent: m.agent, name: m.name ?? null, avatar: m.avatar ?? null, socket: m.socket, created: m.created, pty: null, buffer: [], clients: new Set(), chatMode: true, resumeId: m.resumeId ?? null, model: m.model ?? null, effort: m.effort ?? null, permissionMode: validatePermissionMode(m.permissionMode) || readDefaultPermissionMode(), owner: m.owner ?? 'owner' };
+			const s = { id: m.id, cwd: m.cwd, agent: m.agent, name: m.name ?? null, avatar: m.avatar ?? null, socket: m.socket, created: m.created, pty: null, buffer: [], clients: new Set(), chatMode: true, resumeId: m.resumeId ?? null, model: m.model ?? null, effort: m.effort ?? null, permissionMode: validatePermissionMode(m.permissionMode) || readDefaultPermissionMode(), owner: m.owner ?? 'owner', seedSummary: m.seedSummary ?? null };
 			try { wire(s, false); sessions.set(s.id, s); n++; } catch { /* skip */ }
 			continue;
 		}
@@ -1223,6 +1235,71 @@ export function kill(id) {
 	removeSessionUploads(id); // GC this session's uploaded files (onExit also GCs; idempotent)
 	persist();
 	return true;
+}
+
+/**
+ * Archive a CHAT session: same teardown as kill() but the transcript survives.
+ * The chat log + uploads move to ~/.codeout/archive/<id>/ with a meta record, and a
+ * summary is generated async (fire-and-forget; reopen retries a still-pending one).
+ * Terminal sessions can't archive (no transcript) — callers keep kill() for those.
+ * @returns {object|null} the archive meta, or null (unknown id / not a chat session)
+ */
+export function archiveSession(id) {
+	const s = sessions.get(id);
+	if (!s || !s.chatMode) return null;
+	// Mirror kill()'s chat teardown ordering (permissions → stats timer → backend → sinks).
+	try { s._failPendingPermissions?.('backend gone'); } catch { /* ignore */ }
+	if (s._statsTimer) { try { clearTimeout(s._statsTimer); } catch { /* ignore */ } s._statsTimer = null; }
+	try { s.backend?.kill(); } catch { /* gone */ }
+	for (const sink of s.clients) {
+		try { sink.close(1000, 'archived'); } catch { /* closed */ }
+	}
+	s.clients.clear();
+	sessions.delete(id);
+	persist();
+	const meta = archiveMove(
+		{ id: s.id, name: s.name, avatar: s.avatar, cwd: s.cwd, agent: s.agent, model: s.model ?? null, effort: s.effort ?? null, permissionMode: s.permissionMode ?? null, created: s.created, resumeId: s.resumeId ?? null },
+		{ chatLogFile: join(CHAT_LOG_DIR, `${s.id}.jsonl`), uploadsPath: join(uploadsDir(), s.id) }
+	);
+	// Summarize in the background — archive returns immediately, the meta fills in.
+	void summarize(id, { env: childEnv() }).catch(() => { /* stays pending; reopen retries */ });
+	return meta;
+}
+
+/**
+ * Reopen an archived chat as a FRESH session seeded with its summary (default), or as
+ * a native full resume when mode==='resume' and the resumeId survived. The old
+ * transcript stays in the archive (viewable/exportable) — it is NOT replayed into the
+ * new session's log.
+ * @returns {Promise<object>} the create() result for the new session
+ */
+export async function reopenArchive(id, creatorId = 'owner', mode = 'summary') {
+	const meta = readArchiveMeta(id);
+	if (!meta) throw new Error('archive not found');
+	if (!existsSync(meta.cwd)) throw new Error('the original folder no longer exists');
+	if (!allowedCwd(meta.cwd)) throw new Error('the original folder is no longer in the project list');
+	let seedSummary = null, resumeId = null;
+	if (mode === 'resume' && meta.resumeId) {
+		resumeId = meta.resumeId;
+	} else {
+		// A still-pending summary is generated NOW (bounded by the summarizer's own
+		// timeout) so the reopened agent actually gets its context.
+		const summary = meta.summary ?? await summarize(id, { env: childEnv() });
+		if (summary) {
+			const when = new Date(meta.archivedAt || Date.now()).toISOString().slice(0, 10);
+			seedSummary = `Context from a previous session with this user (archived ${when}), so you can pick the work back up:\n${summary}`;
+		}
+	}
+	const created = create(meta.cwd, 'claude', true, creatorId, meta.name || 'Chat', meta.permissionMode || null,
+		{ seedSummary, resumeId, model: meta.model || null, effort: meta.effort || null });
+	// A visible note in the new chat showing exactly what the agent was told.
+	const s = sessions.get(created.id);
+	if (s?.emitChat) {
+		if (resumeId) s.emitChat({ t: 'system', text: 'Reopened from archive — resuming the full previous conversation.' });
+		else if (seedSummary) s.emitChat({ t: 'system', text: `Reopened from archive — summary injected:\n\n${seedSummary.split('\n').slice(1).join('\n')}` });
+		else s.emitChat({ t: 'system', text: 'Reopened from archive — no summary was available, starting fresh.' });
+	}
+	return created;
 }
 
 // DEMO: reap idle demo sessions so abandoned chats (a visitor closed the app) don't pile up + keep
@@ -1651,6 +1728,45 @@ export async function handleApi(req, res) {
 				return true;
 			}
 			if (req.method === 'DELETE' && dm) { const pk = revokeDevice(decodeURIComponent(dm[1])); if (pk) { closeDeviceConnections(pk); broadcastDevicesUpdated(); } send(200, { ok: !!pk }); return true; }
+			// ----- archive lifecycle (chat sessions only; DEMO never archives — the reaper kills) -----
+			const arc = url.pathname.match(/^\/api\/sessions\/([^/]+)\/archive$/);
+			if (req.method === 'POST' && arc) {
+				if (DEMO_MODE) { send(403, { error: 'archiving is disabled in the demo' }); return true; }
+				const meta = archiveSession(decodeURIComponent(arc[1]));
+				if (!meta) send(404, { error: 'no such chat session' });
+				else send(200, meta);
+				return true;
+			}
+			if (req.method === 'GET' && url.pathname === '/api/archive') {
+				// Light list: meta WITHOUT the summary text (that ships per-item on demand).
+				send(200, { archives: DEMO_MODE ? [] : listArchives().map(({ summary, ...rest }) => rest) });
+				return true;
+			}
+			const arcRe = url.pathname.match(/^\/api\/archive\/([^/]+)\/reopen$/);
+			if (req.method === 'POST' && arcRe) {
+				if (DEMO_MODE) { send(403, { error: 'archives are disabled in the demo' }); return true; }
+				const body = await readJson(req);
+				const creatorId = deviceIdForToken(bearerToken(req)) || 'owner';
+				try {
+					send(200, await reopenArchive(decodeURIComponent(arcRe[1]), creatorId, body.mode === 'resume' ? 'resume' : 'summary'));
+				} catch (e) {
+					if (e && e.code === 'EBUDGET') send(429, { error: String(e?.message ?? e) });
+					else send(400, { error: String(e?.message ?? e) });
+				}
+				return true;
+			}
+			const arcOne = url.pathname.match(/^\/api\/archive\/([^/]+)$/);
+			if (req.method === 'GET' && arcOne) {
+				const meta = DEMO_MODE ? null : readArchiveMeta(decodeURIComponent(arcOne[1]));
+				if (!meta) send(404, { error: 'archive not found' });
+				else send(200, meta); // full record, summary included (the reopen sheet shows it)
+				return true;
+			}
+			if (req.method === 'DELETE' && arcOne) {
+				if (DEMO_MODE) { send(403, { error: 'archives are disabled in the demo' }); return true; }
+				send(200, { ok: deleteArchive(decodeURIComponent(arcOne[1])) });
+				return true;
+			}
 			const m = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
 			if (req.method === 'DELETE' && m) send(200, { ok: kill(m[1]) });
 			else if (req.method === 'PATCH' && m) {
