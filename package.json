@@ -1,0 +1,48 @@
+{
+	"name": "codeoutcli",
+	"version": "1.3.0",
+	"type": "module",
+	"description": "Self-hosted GUI for your AI coding agents. Run Claude or a shell on your own machine and drive it from your phone or browser, end-to-end encrypted.",
+	"license": "MIT",
+	"bin": {
+		"codeout": "./cli.js"
+	},
+	"scripts": {
+		"build": "node ./build-webui.mjs",
+		"start": "node server.js",
+		"prepublishOnly": "node ./build-webui.mjs"
+	},
+	"dependencies": {
+		"busboy": "^1.6.0",
+		"libsodium-wrappers": "^0.8.4",
+		"@homebridge/node-pty-prebuilt-multiarch": "^0.13.0",
+		"qrcode": "^1.5.4",
+		"qrcode-terminal": "^0.12.0",
+		"ws": "^8.21.0"
+	},
+	"trustedDependencies": ["@homebridge/node-pty-prebuilt-multiarch"],
+	"files": [
+		"cli.js",
+		"server.js",
+		"build-webui.mjs",
+		"sessions.js",
+		"archive.js",
+		"crypto.js",
+		"auth.js",
+		"pty-bridge.js",
+		"chat-events.js",
+		"claude-chat.js",
+		"codex-chat.js",
+		"gemini-chat.js",
+		"json-rpc.js",
+		"agents.js",
+		"apns.js",
+		"platform/",
+		"webui/",
+		"codeoutlogo.png",
+		"PROTOCOL.md",
+		"CHAT-EVENTS.md",
+		"README.md",
+		"LICENSE"
+	]
+}
