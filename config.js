@@ -94,6 +94,7 @@ export function loadConfig() {
 			const parsed = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
 			configCache = {
 				version: 2,
+				token: parsed.token || undefined,
 				server: { ...defaultConfig().server, ...(parsed.server || {}) },
 				agents: { ...defaultAgents(), ...(parsed.agents || {}) }
 			};
@@ -110,7 +111,16 @@ export function saveConfig(cfg) {
 	configCache = cfg;
 	try {
 		mkdirSync(CODEOUT_HOME, { recursive: true, mode: 0o700 });
-		writeAtomic(CONFIG_FILE, JSON.stringify(cfg, null, 2), 0o600);
+		let token = cfg.token;
+		if (!token && existsSync(CONFIG_FILE)) {
+			try {
+				const existing = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+				if (existing?.token) token = existing.token;
+			} catch { /* ignore */ }
+		}
+		const toWrite = { ...cfg };
+		if (token) toWrite.token = token;
+		writeAtomic(CONFIG_FILE, JSON.stringify(toWrite, null, 2), 0o600);
 	} catch (e) {
 		console.error('[codeout] config persist failed:', e?.message ?? e);
 	}
