@@ -5,6 +5,7 @@
 // (They do NOT survive a node-server restart - by design; that's fine.)
 import platform from './platform/index.js';
 import Busboy from 'busboy';
+import QRCode from 'qrcode';
 import { homedir } from 'node:os';
 import { basename, join, resolve as resolvePath, isAbsolute, sep, extname } from 'node:path';
 import { existsSync, mkdirSync, createWriteStream, writeFileSync, readFileSync, unlinkSync, readdirSync, statSync, createReadStream, accessSync, realpathSync, rmSync, renameSync, constants as FS } from 'node:fs';
@@ -1703,7 +1704,16 @@ export async function handleApi(req, res) {
 			const code = mintPairCode();
 			const host = req.headers.host || `${process.env.HOST || '127.0.0.1'}:${process.env.PORT || 3000}`;
 			const spk = daemonPublicKeyB64();
-			send(200, { code, display: formatPairCode(code), fingerprint: daemonFingerprint(), daemonPk: spk, uri: `codeout://pair?host=${encodeURIComponent(host)}&spk=${spk}&c=${code}&v=2` });
+			const uri = `codeout://pair?host=${encodeURIComponent(host)}&spk=${spk}&c=${code}&v=2`;
+			let qrDataUrl = null;
+			try {
+				qrDataUrl = await QRCode.toDataURL(uri, {
+					margin: 1,
+					width: 220,
+					color: { dark: '#000000', light: '#ffffff' }
+				});
+			} catch { /* ignore */ }
+			send(200, { code, display: formatPairCode(code), fingerprint: daemonFingerprint(), daemonPk: spk, uri, qrDataUrl });
 		} else if (req.method === 'POST' && url.pathname === '/api/sessions') {
 			const body = await readJson(req);
 			// Attribute the create to the requesting device (for per-device cap + rate). A

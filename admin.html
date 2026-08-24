@@ -180,17 +180,13 @@
 			border: 1px solid transparent;
 			transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 		}
-		.btn:active {
-			transform: scale(0.96);
-		}
+		.btn:active { transform: scale(0.96); }
 		.btn-primary {
 			background: var(--accent);
 			color: var(--ink);
 			font-weight: 600;
 		}
-		.btn-primary:hover {
-			background: var(--accent-dim);
-		}
+		.btn-primary:hover { background: var(--accent-dim); }
 		.btn-ghost {
 			background: rgba(255, 255, 255, 0.04);
 			color: var(--text);
@@ -200,9 +196,17 @@
 			background: rgba(255, 255, 255, 0.08);
 			border-color: var(--border-soft);
 		}
+		.btn-danger {
+			background: rgba(255, 107, 129, 0.12);
+			color: var(--err);
+			border-color: rgba(255, 107, 129, 0.25);
+		}
+		.btn-danger:hover {
+			background: rgba(255, 107, 129, 0.2);
+		}
 
 		main {
-			max-width: 900px;
+			max-width: 960px;
 			width: 100%;
 			margin: 0 auto;
 			padding: 28px 20px 48px;
@@ -311,12 +315,7 @@
 			align-items: center;
 			cursor: pointer;
 		}
-		.toggle-switch input {
-			opacity: 0;
-			width: 0;
-			height: 0;
-			position: absolute;
-		}
+		.toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
 		.toggle-track {
 			width: 36px;
 			height: 20px;
@@ -325,9 +324,7 @@
 			position: relative;
 			transition: background-color 0.15s ease;
 		}
-		.toggle-switch input:checked + .toggle-track {
-			background: var(--accent);
-		}
+		.toggle-switch input:checked + .toggle-track { background: var(--accent); }
 		.toggle-thumb {
 			position: absolute;
 			top: 2px;
@@ -425,21 +422,72 @@
 			gap: 5px;
 		}
 
-		.pair-code-hero {
+		/* QR & Pairing Layout */
+		.pairing-deck {
+			display: flex;
+			align-items: center;
+			gap: 20px;
+			background: var(--bg);
+			border: 1px solid var(--border);
+			border-radius: 10px;
+			padding: 16px;
+			margin: 10px 0;
+		}
+		@media (max-width: 540px) {
+			.pairing-deck { flex-direction: column; text-align: center; }
+		}
+		.qr-wrapper {
+			background: #ffffff;
+			padding: 8px;
+			border-radius: 8px;
+			width: 136px;
+			height: 136px;
+			flex-shrink: 0;
+			display: grid;
+			place-items: center;
+		}
+		.qr-wrapper img {
+			width: 120px;
+			height: 120px;
+			display: block;
+		}
+		.pairing-details {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		}
+		.pair-code-display {
 			font-family: var(--font-mono);
-			font-size: 24px;
+			font-size: 22px;
 			font-weight: 600;
 			letter-spacing: 0.08em;
 			color: var(--accent);
-			text-align: center;
-			padding: 16px 0;
-			background: var(--bg);
-			border: 1px solid var(--border);
-			border-radius: 8px;
-			margin: 12px 0 8px;
 		}
 
-		/* Password Unlock Modal */
+		/* Devices Table */
+		.devices-table {
+			width: 100%;
+			border-collapse: collapse;
+			font-size: 12px;
+		}
+		.devices-table th {
+			text-align: left;
+			font-size: 10.5px;
+			font-family: var(--font-mono);
+			color: var(--muted);
+			padding: 8px 10px;
+			border-bottom: 1px solid var(--border);
+			text-transform: uppercase;
+		}
+		.devices-table td {
+			padding: 10px;
+			border-bottom: 1px solid var(--border-soft);
+			color: var(--text);
+		}
+		.devices-table tr:last-child td { border-bottom: none; }
+
+		/* Lock Overlay Modal */
 		#lockOverlay {
 			position: fixed;
 			inset: 0;
@@ -472,13 +520,8 @@
 			font-size: 12px;
 			color: var(--faint);
 		}
-		footer a {
-			color: var(--muted);
-			text-decoration: none;
-		}
-		footer a:hover {
-			color: var(--accent);
-		}
+		footer a { color: var(--muted); text-decoration: none; }
+		footer a:hover { color: var(--accent); }
 
 		.spinner {
 			width: 12px;
@@ -509,8 +552,8 @@
 	<main>
 		<div class="hero-card">
 			<div>
-				<h2 class="hero-title">Server-Authoritative AI Management</h2>
-				<p class="hero-subtitle">Dictate active providers, model allowlists, and credentials. Secrets stay encrypted on this host.</p>
+				<h2 class="hero-title">Host Server &amp; AI Control Plane</h2>
+				<p class="hero-subtitle">Dictate active providers, model allowlists, and pairing. Secrets stay encrypted on this host.</p>
 			</div>
 			<div style="text-align: right;">
 				<div class="mono" style="font-size: 12px; color: var(--text);" id="serverEndpoint">Loading...</div>
@@ -538,7 +581,7 @@
 		<!-- Pairing & Security -->
 		<section>
 			<div class="section-header">
-				<span class="section-title">Device Pairing & Master Security</span>
+				<span class="section-title">Instant Device Pairing &amp; Security</span>
 			</div>
 
 			<div class="grid-cards">
@@ -546,15 +589,33 @@
 				<div class="card">
 					<div class="card-header">
 						<div>
-							<h3 style="font-size: 14px; font-weight: 600; color: var(--text);">Pair a Device</h3>
-							<p style="font-size: 12px; color: var(--muted); margin-top: 2px;">Enter this code in the iOS app or at <a href="https://app.codeout.dev/pair" target="_blank" style="color:var(--accent); text-decoration:none;">app.codeout.dev/pair</a></p>
+							<h3 style="font-size: 14px; font-weight: 600; color: var(--text);">Pair iOS / Web Client</h3>
+							<p style="font-size: 12px; color: var(--muted); margin-top: 2px;">Scan the QR code in the iOS app or enter the code manually.</p>
 						</div>
 					</div>
 
-					<div class="pair-code-hero tabular" id="pairCodeText">---- ---- ----</div>
+					<div class="pairing-deck">
+						<div class="qr-wrapper" id="qrFrame">
+							<div class="spinner"></div>
+						</div>
+						<div class="pairing-details">
+							<div style="font-size:11px; color:var(--muted);">Pairing Code</div>
+							<div class="pair-code-display tabular" id="pairCodeText">---- ---- ----</div>
+							<div style="display:flex; gap:6px; margin-top:4px;">
+								<button class="btn btn-primary" style="height:28px; font-size:11px;" onclick="copyPairCode()">
+									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+									<span id="copyBtnText">Copy Code</span>
+								</button>
+								<button class="btn btn-ghost" style="height:28px; font-size:11px;" onclick="fetchPairCode()">
+									<span>Mint New Code</span>
+								</button>
+							</div>
+						</div>
+					</div>
+
 					<div style="display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--faint);">
-						<span>Valid for 5 minutes</span>
-						<button class="btn btn-ghost" style="height:26px; padding:0 8px;" onclick="fetchPairCode()">Mint New Code</button>
+						<span>Fingerprint: <code class="mono" id="fpText" style="color:var(--text)">----</code></span>
+						<span id="expiryTimer">Valid for 5 minutes</span>
 					</div>
 				</div>
 
@@ -577,8 +638,38 @@
 					</div>
 
 					<div class="card-footer">
-						<span style="font-size: 11px; color: var(--faint);">Saved to <code class="mono" style="color:var(--muted);">~/.codeout/config.json</code></span>
+						<span style="font-size: 11px; color: var(--faint);">Stored securely in <code class="mono" style="color:var(--muted);">~/.codeout/config.json</code> (0600)</span>
 					</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- Connected Devices Table -->
+		<section>
+			<div class="section-header">
+				<span class="section-title">Connected &amp; Paired Devices</span>
+				<button class="btn btn-ghost" style="height:26px; padding:0 8px;" onclick="loadDevices()">
+					<span>Refresh Devices</span>
+				</button>
+			</div>
+
+			<div class="card" style="padding: 0; overflow: hidden;">
+				<div style="overflow-x: auto;">
+					<table class="devices-table">
+						<thead>
+							<tr>
+								<th>Device Name</th>
+								<th>Device ID</th>
+								<th>Paired On</th>
+								<th style="text-align: right;">Action</th>
+							</tr>
+						</thead>
+						<tbody id="devicesTableBody">
+							<tr>
+								<td colspan="4" style="text-align: center; color: var(--muted); padding: 24px;">Loading paired devices...</td>
+							</tr>
+						</tbody>
+					</table>
 				</div>
 			</div>
 		</section>
@@ -604,6 +695,7 @@
 
 	<script>
 		let config = null;
+		let currentPairData = null;
 		let adminPassword = sessionStorage.getItem('codeout-admin-pw') || '';
 		const token = new URLSearchParams(window.location.search).get('token') || localStorage.getItem('codeout-owner-token') || '';
 		if (token) localStorage.setItem('codeout-owner-token', token);
@@ -638,7 +730,7 @@
 			},
 			gemini: {
 				name: 'Gemini (Antigravity)',
-				desc: 'Google Antigravity agent (Gemini 2.5 Pro & Flash via agy)',
+				desc: 'Google Antigravity agent (Gemini 3.5 / 3.7 / 3.1 Pro via agy)',
 				icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3z"/></svg>`
 			}
 		};
@@ -794,7 +886,7 @@
 				if (data.ok) {
 					res.innerHTML = `<span style="color:var(--ok)">✓ Connected (${data.latencyMs}ms)</span>`;
 				} else {
-					res.innerHTML = `<span style="color:var(--err)" title="${data.error}">✗ Failed</span>`;
+					res.innerHTML = `<span style="color:var(--err)" title="${data.error}">✗ ${data.error || 'Failed'}</span>`;
 				}
 			} catch (e) {
 				res.innerHTML = `<span style="color:var(--err)">✗ Error: ${e.message}</span>`;
@@ -805,13 +897,77 @@
 		}
 
 		async function fetchPairCode() {
+			const qrFrame = document.getElementById('qrFrame');
+			qrFrame.innerHTML = `<div class="spinner"></div>`;
 			try {
 				const r = await fetch('/api/pair/code', { headers: getHeaders() });
 				if (!r.ok) throw new Error('HTTP ' + r.status);
 				const data = await r.json();
+				currentPairData = data;
 				document.getElementById('pairCodeText').textContent = data.display || data.code;
+				document.getElementById('fpText').textContent = data.fingerprint || 'OK';
+				if (data.qrDataUrl) {
+					qrFrame.innerHTML = `<img src="${data.qrDataUrl}" alt="Pairing QR Code" />`;
+				} else {
+					qrFrame.innerHTML = `<div style="font-size:10px; color:#000;">Scan in App</div>`;
+				}
 			} catch (e) {
 				document.getElementById('pairCodeText').textContent = 'Error';
+				qrFrame.innerHTML = `<div style="font-size:10px; color:var(--err);">Failed</div>`;
+			}
+		}
+
+		function copyPairCode() {
+			if (!currentPairData || !currentPairData.display) return;
+			navigator.clipboard.writeText(currentPairData.display).then(() => {
+				const btn = document.getElementById('copyBtnText');
+				btn.textContent = 'Copied!';
+				setTimeout(() => { btn.textContent = 'Copy Code'; }, 2000);
+			});
+		}
+
+		async function loadDevices() {
+			const body = document.getElementById('devicesTableBody');
+			try {
+				const r = await fetch('/api/devices', { headers: getHeaders() });
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				const data = await r.json();
+				const list = data.devices || [];
+				if (!list.length) {
+					body.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--muted); padding: 24px;">No paired devices yet. Scan the QR code to pair your first device.</td></tr>`;
+					return;
+				}
+				body.innerHTML = list.map(d => `
+					<tr>
+						<td>
+							<div style="font-weight:600; display:flex; align-items:center; gap:6px;">
+								<span>${d.name || 'Unnamed Device'}</span>
+								${d.current ? `<span class="badge badge-pink">This Browser</span>` : ''}
+							</div>
+						</td>
+						<td><code class="mono" style="color:var(--muted); font-size:11px;">${d.id}</code></td>
+						<td class="tabular" style="color:var(--muted); font-size:11.5px;">${d.paired ? new Date(d.paired).toLocaleDateString() + ' ' + new Date(d.paired).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Unknown'}</td>
+						<td style="text-align: right;">
+							<button class="btn btn-danger" style="height:24px; padding:0 8px; font-size:10.5px;" onclick="revokeDevice('${d.id}')">Revoke</button>
+						</td>
+					</tr>
+				`).join('');
+			} catch (e) {
+				body.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--err); padding: 24px;">Failed to load devices: ${e.message}</td></tr>`;
+			}
+		}
+
+		async function revokeDevice(id) {
+			if (!confirm('Revoke this device? It will be disconnected immediately.')) return;
+			try {
+				const r = await fetch(`/api/devices/${encodeURIComponent(id)}`, {
+					method: 'DELETE',
+					headers: getHeaders()
+				});
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				await loadDevices();
+			} catch (e) {
+				alert('Failed to revoke device: ' + e.message);
 			}
 		}
 
@@ -859,6 +1015,7 @@
 					document.getElementById('lockOverlay').style.display = 'none';
 					await loadData();
 					fetchPairCode();
+					loadDevices();
 				} else {
 					err.textContent = 'Incorrect password';
 				}
@@ -869,6 +1026,7 @@
 
 		loadData();
 		fetchPairCode();
+		loadDevices();
 	</script>
 </body>
 </html>
