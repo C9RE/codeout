@@ -38,6 +38,7 @@ function defaultAgents() {
 	return {
 		claude: {
 			enabled: true,
+			chat: true,
 			name: 'Claude Code',
 			authMode: 'subscription', // 'subscription' | 'apiKey'
 			apiKey: null,
@@ -49,6 +50,7 @@ function defaultAgents() {
 		},
 		codex: {
 			enabled: true,
+			chat: true,
 			name: 'OpenAI Codex',
 			authMode: 'subscription', // 'subscription' | 'apiKey'
 			apiKey: null,
@@ -60,6 +62,7 @@ function defaultAgents() {
 		},
 		gemini: {
 			enabled: true,
+			chat: true,
 			name: 'Gemini (Antigravity)',
 			authMode: 'subscription', // 'subscription' | 'apiKey'
 			apiKey: null,
@@ -167,6 +170,7 @@ export function getAdminConfig(env) {
 		agentsOut[id] = {
 			...agent,
 			id,
+			chat: true,
 			installed: det.installed,
 			version: det.version,
 			apiKeyMasked: agent.apiKey ? maskApiKey(agent.apiKey) : null,

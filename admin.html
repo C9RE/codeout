@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>codeout daemon — control deck</title>
+	<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23ff6ac1'/><text y='70' x='50' font-size='60' text-anchor='middle' fill='%230b0d10' font-family='sans-serif' font-weight='bold'>c</text></svg>" />
+	<style>
+		:root {
+			--bg: #0c0a0c;
+			--card-bg: #141215;
+			--card-border: rgba(255, 255, 255, 0.08);
+			--card-hover: rgba(255, 255, 255, 0.12);
+			--text: #f5f2f4;
+			--text-muted: #8e8890;
+			--text-faint: #5e5960;
+			--accent: #ff6ac1;
+			--accent-hover: #ff85ce;
+			--accent-glow: rgba(255, 106, 193, 0.15);
+			--ok: #34d399;
+			--err: #f43f5e;
+			--font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+			--font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+		}
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+		body {
+			background: var(--bg);
+			color: var(--text);
+			font-family: var(--font-sans);
+			font-size: 14px;
+			line-height: 1.5;
+			min-height: 100vh;
+			display: flex;
+			flex-direction: column;
+		}
+		header {
+			border-bottom: 1px solid var(--card-border);
+			padding: 16px 24px;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			background: rgba(12, 10, 12, 0.8);
+			backdrop-filter: blur(8px);
+			position: sticky;
+			top: 0;
+			z-index: 100;
+		}
+		.brand {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			text-decoration: none;
+			color: var(--text);
+		}
+		.logo {
+			width: 28px;
+			height: 28px;
+			background: var(--accent);
+			border-radius: 8px;
+			display: grid;
+			place-items: center;
+			font-weight: 900;
+			color: #000;
+			font-size: 16px;
+		}
+		.brand h1 {
+			font-size: 16px;
+			font-weight: 700;
+			letter-spacing: -0.02em;
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+		.badge {
+			font-size: 10px;
+			font-family: var(--font-mono);
+			padding: 2px 6px;
+			border-radius: 4px;
+			font-weight: 600;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+		}
+		.badge-pink { background: var(--accent-glow); color: var(--accent); border: 1px solid rgba(255,106,193,0.3); }
+		.badge-ok { background: rgba(52, 211, 153, 0.1); color: var(--ok); border: 1px solid rgba(52,211,153,0.25); }
+		.badge-err { background: rgba(244, 63, 94, 0.1); color: var(--err); border: 1px solid rgba(244,63,94,0.25); }
+
+		.header-actions {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+		}
+		.btn {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			padding: 6px 12px;
+			border-radius: 8px;
+			font-size: 12px;
+			font-weight: 600;
+			cursor: pointer;
+			text-decoration: none;
+			border: 1px solid transparent;
+			transition: all 0.15s ease;
+		}
+		.btn-primary {
+			background: var(--accent);
+			color: #000;
+		}
+		.btn-primary:hover { background: var(--accent-hover); }
+		.btn-ghost {
+			background: rgba(255,255,255,0.05);
+			color: var(--text);
+			border-color: var(--card-border);
+		}
+		.btn-ghost:hover { background: rgba(255,255,255,0.1); border-color: var(--card-hover); }
+
+		main {
+			max-width: 960px;
+			width: 100%;
+			margin: 0 auto;
+			padding: 32px 24px;
+			display: flex;
+			flex-direction: column;
+			gap: 32px;
+		}
+
+		.hero-banner {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			background: linear-gradient(180deg, rgba(255,106,193,0.08) 0%, rgba(20,18,21,0.4) 100%);
+			border: 1px solid rgba(255,106,193,0.2);
+			border-radius: 16px;
+			padding: 24px;
+		}
+		.hero-text h2 {
+			font-size: 18px;
+			font-weight: 700;
+			margin-bottom: 4px;
+		}
+		.hero-text p {
+			color: var(--text-muted);
+			font-size: 13px;
+		}
+		.status-dot {
+			display: inline-block;
+			width: 8px;
+			height: 8px;
+			background: var(--ok);
+			border-radius: 50%;
+			box-shadow: 0 0 8px var(--ok);
+			margin-right: 6px;
+		}
+
+		.section-title {
+			font-size: 14px;
+			font-weight: 700;
+			color: var(--text);
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			margin-bottom: 12px;
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+
+		.grid-2 {
+			display: grid;
+			grid-template-columns: 1fr 1fr;
+			gap: 16px;
+		}
+		@media (max-width: 768px) {
+			.grid-2 { grid-template-columns: 1fr; }
+		}
+
+		.card {
+			background: var(--card-bg);
+			border: 1px solid var(--card-border);
+			border-radius: 14px;
+			padding: 20px;
+			display: flex;
+			flex-direction: column;
+			gap: 16px;
+		}
+
+		.agent-header {
+			display: flex;
+			align-items: flex-start;
+			justify-content: space-between;
+		}
+		.agent-info {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+		}
+		.agent-icon {
+			font-size: 24px;
+		}
+		.agent-name {
+			font-weight: 600;
+			font-size: 15px;
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+		.agent-desc {
+			font-size: 12px;
+			color: var(--text-muted);
+		}
+
+		.mode-toggle {
+			display: inline-flex;
+			background: #080608;
+			border: 1px solid var(--card-border);
+			border-radius: 8px;
+			padding: 3px;
+			gap: 2px;
+		}
+		.mode-btn {
+			padding: 4px 10px;
+			font-size: 11px;
+			font-weight: 600;
+			border-radius: 6px;
+			border: none;
+			cursor: pointer;
+			background: transparent;
+			color: var(--text-muted);
+			transition: all 0.15s ease;
+		}
+		.mode-btn.active {
+			background: var(--accent);
+			color: #000;
+		}
+
+		.field-group {
+			display: flex;
+			flex-direction: column;
+			gap: 6px;
+		}
+		.field-label {
+			font-size: 11px;
+			font-weight: 600;
+			color: var(--text-muted);
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+		}
+		.input-row {
+			display: flex;
+			gap: 8px;
+		}
+		input[type="text"], input[type="password"], select {
+			flex: 1;
+			background: #080608;
+			border: 1px solid var(--card-border);
+			border-radius: 8px;
+			padding: 8px 12px;
+			color: var(--text);
+			font-family: var(--font-mono);
+			font-size: 12px;
+			outline: none;
+			transition: border-color 0.15s ease;
+		}
+		input:focus, select:focus {
+			border-color: var(--accent);
+		}
+
+		.card-footer {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			border-top: 1px solid rgba(255,255,255,0.04);
+			padding-top: 12px;
+		}
+
+		.test-result {
+			font-family: var(--font-mono);
+			font-size: 11px;
+			display: flex;
+			align-items: center;
+			gap: 6px;
+		}
+
+		.qr-box {
+			background: #fff;
+			padding: 12px;
+			border-radius: 12px;
+			width: fit-content;
+			margin: 0 auto;
+		}
+		.qr-code-text {
+			font-family: var(--font-mono);
+			font-size: 20px;
+			font-weight: 700;
+			color: var(--accent);
+			letter-spacing: 0.1em;
+			text-align: center;
+			margin-top: 12px;
+		}
+
+		footer {
+			margin-top: auto;
+			border-top: 1px solid var(--card-border);
+			padding: 20px 24px;
+			text-align: center;
+			font-size: 12px;
+			color: var(--text-faint);
+		}
+	</style>
+</head>
+<body>
+	<header>
+		<a href="/" class="brand">
+			<div class="logo">c</div>
+			<h1>codeout <span class="badge badge-pink">Host Control Deck</span></h1>
+		</a>
+		<div class="header-actions">
+			<span id="daemonStatus" class="badge badge-ok"><span class="status-dot"></span> Daemon Live</span>
+			<a href="https://app.codeout.dev" target="_blank" class="btn btn-primary">Open Web App &rarr;</a>
+		</div>
+	</header>
+
+	<main>
+		<div class="hero-banner">
+			<div class="hero-text">
+				<h2>Host AI Control Plane</h2>
+				<p>This server dictates the AI engines and auth available to your paired devices. Secrets stay strictly on this machine.</p>
+			</div>
+			<div style="text-align: right;">
+				<div style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);" id="serverAddress">Loading...</div>
+				<div style="font-size: 11px; color: var(--text-faint); margin-top: 4px;">Tailscale: <code style="color:var(--text)">100.77.82.41:8400</code></div>
+			</div>
+		</div>
+
+		<!-- AI Engines Matrix -->
+		<section>
+			<div class="section-title">AI Engine Management</div>
+			<div class="grid-2" id="agentsGrid">
+				<div class="card" style="grid-column: 1 / -1; text-align: center; color: var(--text-muted);">
+					Loading agent configuration...
+				</div>
+			</div>
+		</section>
+
+		<!-- Pair a Device & Active Connections -->
+		<section>
+			<div class="section-title">Device Pairing & Remote Access</div>
+			<div class="grid-2">
+				<!-- Pair QR Card -->
+				<div class="card" style="text-align: center;">
+					<h3 style="font-size: 14px; font-weight: 600;">Pair a New Device</h3>
+					<p style="font-size: 12px; color: var(--text-muted);">Scan this in the iOS app or enter the code at <a href="https://app.codeout.dev/pair" target="_blank" style="color:var(--accent)">app.codeout.dev/pair</a></p>
+					
+					<div id="qrContainer" style="margin: 16px 0;">
+						<div id="pairCodeDisplay" class="qr-code-text">---- ---- ----</div>
+						<div id="pairExpires" style="font-size: 11px; color: var(--text-faint); margin-top: 4px;">Valid for 5 minutes</div>
+					</div>
+
+					<button class="btn btn-ghost" onclick="fetchPairCode()" style="margin: 0 auto;">Mint Fresh Pairing Code</button>
+				</div>
+
+				<!-- Master Password & Server Info Card -->
+				<div class="card">
+					<h3 style="font-size: 14px; font-weight: 600;">Master Admin Password</h3>
+					<p style="font-size: 12px; color: var(--text-muted);">Protects this control deck when accessed over remote tunnels.</p>
+					
+					<div class="field-group" style="margin-top: 8px;">
+						<input type="password" id="masterPasswordInput" placeholder="Enter new master password" />
+						<div class="input-row" style="margin-top: 8px;">
+							<input type="password" id="masterPasswordConfirm" placeholder="Confirm password" />
+							<button class="btn btn-primary" onclick="saveMasterPassword()">Set Password</button>
+						</div>
+						<div id="passwordStatus" style="font-size: 11px; font-family: var(--font-mono); margin-top: 4px;"></div>
+					</div>
+
+					<div style="border-top: 1px solid rgba(255,255,255,0.04); padding-top: 12px; margin-top: auto;">
+						<div style="font-size: 11px; color: var(--text-faint);">
+							Daemon config stored securely at <code style="color:var(--text)">~/.codeout/config.json</code> (0600)
+						</div>
+					</div>
+				</div>
+			</div>
+		</section>
+	</main>
+
+	<footer>
+		codeout &copy; 2026 &bull; self-hosted AI coding agents in your pocket &bull; <a href="https://codeout.dev/docs" target="_blank" style="color:var(--text-muted)">Documentation</a>
+	</footer>
+
+	<script>
+		let config = null;
+		const TOKEN = new URLSearchParams(window.location.search).get('token') || localStorage.getItem('codeout-owner-token') || '';
+		if (TOKEN) localStorage.setItem('codeout-owner-token', TOKEN);
+
+		const AGENT_META = {
+			claude: { name: 'Claude Code', desc: 'Anthropic coding agent (Claude 3.7 Sonnet, Haiku 3.5)', icon: '🤖' },
+			codex: { name: 'OpenAI Codex', desc: 'OpenAI agent engine (o3-mini, GPT-4o, o1)', icon: '⚡' },
+			gemini: { name: 'Gemini (Antigravity)', desc: 'Google Antigravity agent (Gemini 2.5 Pro & Flash via agy)', icon: '✨' }
+		};
+
+		function authHeaders() {
+			const h = { 'content-type': 'application/json' };
+			if (TOKEN) h['Authorization'] = 'Bearer ' + TOKEN;
+			return h;
+		}
+
+		async function loadConfig() {
+			try {
+				const r = await fetch('/api/config', { headers: authHeaders() });
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				const data = await r.json();
+				config = data.config;
+				renderAgents();
+				document.getElementById('serverAddress').textContent = window.location.host + ' (Port ' + config.server.port + ')';
+			} catch (e) {
+				document.getElementById('agentsGrid').innerHTML = `<div class="card" style="grid-column: 1 / -1; color: var(--err)">Failed to load config: ${e.message}</div>`;
+			}
+		}
+
+		function renderAgents() {
+			const container = document.getElementById('agentsGrid');
+			container.innerHTML = '';
+
+			for (const [id, agent] of Object.entries(config.agents)) {
+				const meta = AGENT_META[id] || { name: id, desc: '', icon: '🤖' };
+				const card = document.createElement('div');
+				card.className = 'card';
+				card.id = `agent-${id}`;
+
+				const isApiKey = agent.authMode === 'apiKey';
+				const statusBadge = agent.installed 
+					? `<span class="badge badge-ok">v${agent.version || 'installed'}</span>`
+					: `<span class="badge badge-err">CLI Missing</span>`;
+
+				card.innerHTML = `
+					<div class="agent-header">
+						<div class="agent-info">
+							<span class="agent-icon">${meta.icon}</span>
+							<div>
+								<div class="agent-name">${meta.name} ${statusBadge}</div>
+								<div class="agent-desc">${meta.desc}</div>
+							</div>
+						</div>
+						<label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+							<input type="checkbox" ${agent.enabled ? 'checked' : ''} onchange="toggleAgentEnabled('${id}', this.checked)" /> Enabled
+						</label>
+					</div>
+
+					<div class="field-group">
+						<div class="field-label">
+							<span>Authentication Mode</span>
+							<div class="mode-toggle">
+								<button class="mode-btn ${!isApiKey ? 'active' : ''}" onclick="setAgentAuthMode('${id}', 'subscription')">Subscription / OAuth</button>
+								<button class="mode-btn ${isApiKey ? 'active' : ''}" onclick="setAgentAuthMode('${id}', 'apiKey')">Direct API Key</button>
+							</div>
+						</div>
+					</div>
+
+					${isApiKey ? `
+						<div class="field-group">
+							<div class="field-label">
+								<span>API Key</span>
+								<span style="font-family:var(--font-mono); font-size:10px; color:${agent.hasApiKey ? 'var(--ok)' : 'var(--err)'}">${agent.hasApiKey ? agent.apiKeyMasked : 'No key set'}</span>
+							</div>
+							<div class="input-row">
+								<input type="password" id="key-${id}" placeholder="${agent.hasApiKey ? 'Enter new key to replace' : 'sk-...'}" />
+								<button class="btn btn-primary" onclick="saveApiKey('${id}')">Save</button>
+							</div>
+						</div>
+					` : `
+						<div style="font-size:11px; color:var(--text-muted); background:rgba(0,0,0,0.3); padding:8px 12px; border-radius:8px;">
+							Uses the CLI login stored in ~/.${id === 'claude' ? 'claude.json' : id === 'codex' ? 'codex' : 'gemini'}. $0 token charge.
+						</div>
+					`}
+
+					${agent.allowedModels && agent.allowedModels.length ? `
+						<div class="field-group">
+							<div class="field-label"><span>Default Model</span></div>
+							<select onchange="saveDefaultModel('${id}', this.value)">
+								${agent.allowedModels.map(m => `<option value="${m}" ${m === agent.defaultModel ? 'selected' : ''}>${m}</option>`).join('')}
+							</select>
+						</div>
+					` : ''}
+
+					<div class="card-footer">
+						<button class="btn btn-ghost" id="test-btn-${id}" onclick="testAgent('${id}')">Test Connection</button>
+						<div class="test-result" id="test-res-${id}"></div>
+					</div>
+				`;
+				container.appendChild(card);
+			}
+		}
+
+		async function patchAgent(id, patch) {
+			try {
+				const r = await fetch(`/api/config/agents/${id}`, {
+					method: 'POST',
+					headers: authHeaders(),
+					body: JSON.stringify(patch)
+				});
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				await loadConfig();
+			} catch (e) {
+				alert('Failed to update agent: ' + e.message);
+			}
+		}
+
+		function toggleAgentEnabled(id, enabled) { patchAgent(id, { enabled }); }
+		function setAgentAuthMode(id, authMode) { patchAgent(id, { authMode }); }
+		function saveDefaultModel(id, defaultModel) { patchAgent(id, { defaultModel }); }
+		function saveApiKey(id) {
+			const input = document.getElementById(`key-${id}`);
+			if (!input || !input.value.trim()) return;
+			patchAgent(id, { apiKey: input.value.trim() });
+		}
+
+		async function testAgent(id) {
+			const btn = document.getElementById(`test-btn-${id}`);
+			const res = document.getElementById(`test-res-${id}`);
+			btn.disabled = true;
+			btn.textContent = 'Testing...';
+			res.innerHTML = '';
+
+			try {
+				const r = await fetch(`/api/config/agents/${id}/test`, {
+					method: 'POST',
+					headers: authHeaders()
+				});
+				const data = await r.json();
+				if (data.ok) {
+					res.innerHTML = `<span style="color:var(--ok)">✓ Connected (${data.latencyMs}ms)</span>`;
+				} else {
+					res.innerHTML = `<span style="color:var(--err)" title="${data.error}">✗ Failed</span>`;
+				}
+			} catch (e) {
+				res.innerHTML = `<span style="color:var(--err)">✗ Error: ${e.message}</span>`;
+			} finally {
+				btn.disabled = false;
+				btn.textContent = 'Test Connection';
+			}
+		}
+
+		async function fetchPairCode() {
+			try {
+				const r = await fetch('/api/pair/code', { headers: authHeaders() });
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				const data = await r.json();
+				document.getElementById('pairCodeDisplay').textContent = data.display || data.code;
+			} catch (e) {
+				document.getElementById('pairCodeDisplay').textContent = 'Error minting code';
+			}
+		}
+
+		async function saveMasterPassword() {
+			const p1 = document.getElementById('masterPasswordInput').value;
+			const p2 = document.getElementById('masterPasswordConfirm').value;
+			const status = document.getElementById('passwordStatus');
+			if (!p1) { status.innerHTML = '<span style="color:var(--err)">Password cannot be empty</span>'; return; }
+			if (p1 !== p2) { status.innerHTML = '<span style="color:var(--err)">Passwords do not match</span>'; return; }
+
+			try {
+				const r = await fetch('/api/config/password', {
+					method: 'POST',
+					headers: authHeaders(),
+					body: JSON.stringify({ password: p1 })
+				});
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				status.innerHTML = '<span style="color:var(--ok)">✓ Password saved</span>';
+				document.getElementById('masterPasswordInput').value = '';
+				document.getElementById('masterPasswordConfirm').value = '';
+			} catch (e) {
+				status.innerHTML = `<span style="color:var(--err)">Error: ${e.message}</span>`;
+			}
+		}
+
+		loadConfig();
+		fetchPairCode();
+	</script>
+</body>
+</html>

@@ -42,6 +42,7 @@
 		"apns.js",
 		"platform/",
 		"webui/",
+		"admin.html",
 		"codeoutlogo.png",
 		"PROTOCOL.md",
 		"CHAT-EVENTS.md",
