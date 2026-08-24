@@ -676,27 +676,29 @@ function wireChat(s, fresh) {
 
 	const makeBackend = CHAT_BACKENDS[s.agent];
 	if (makeBackend) {
-		const auth = getAgentAuth(s.agent);
-		const sessionEnv = { ...env };
-		if (auth.authMode === 'apiKey' && auth.apiKey) {
-			if (s.agent === 'claude') sessionEnv.ANTHROPIC_API_KEY = auth.apiKey;
-			else if (s.agent === 'codex') sessionEnv.OPENAI_API_KEY = auth.apiKey;
-			else if (s.agent === 'gemini' || s.agent === 'agy') sessionEnv.GEMINI_API_KEY = auth.apiKey;
-		}
-		if (!s.model && auth.defaultModel) s.model = auth.defaultModel;
-
 		// Launch (or relaunch) this agent's chat backend. `/model` etc. tear the child down and
 		// call this again with the new flags + the captured resumeId (session_id / threadId), so
 		// the conversation continues with the setting swapped. The SAME opts feed every backend —
-		// Claude, Codex (and later Gemini) all normalize to ChatEvents.
-		s.startBackend = () => makeBackend({
-			cwd: s.cwd, env: sessionEnv, resumeId: s.resumeId || null, model: s.model || null, effort: s.effort || null,
-			permissionMode: s.permissionMode || DEFAULT_PERMISSION_MODE,
-			// A session reopened from the archive carries the previous conversation's
-			// summary — appended to the system prompt so the agent starts with context.
-			extraSystemPrompt: s.seedSummary || null, emit,
-			onSessionId: onResume, onSlashCommands, onMeta, onPermission
-		});
+		// Claude, Codex, and Gemini all normalize to ChatEvents.
+		s.startBackend = () => {
+			const auth = getAgentAuth(s.agent);
+			const sessionEnv = { ...env };
+			if (auth.authMode === 'apiKey' && auth.apiKey) {
+				if (s.agent === 'claude') sessionEnv.ANTHROPIC_API_KEY = auth.apiKey;
+				else if (s.agent === 'codex') sessionEnv.OPENAI_API_KEY = auth.apiKey;
+				else if (s.agent === 'gemini' || s.agent === 'agy') sessionEnv.GEMINI_API_KEY = auth.apiKey;
+			}
+			if (!s.model && auth.defaultModel) s.model = auth.defaultModel;
+
+			return makeBackend({
+				cwd: s.cwd, env: sessionEnv, resumeId: s.resumeId || null, model: s.model || null, effort: s.effort || null,
+				permissionMode: s.permissionMode || DEFAULT_PERMISSION_MODE,
+				// A session reopened from the archive carries the previous conversation's
+				// summary — appended to the system prompt so the agent starts with context.
+				extraSystemPrompt: s.seedSummary || null, emit,
+				onSessionId: onResume, onSlashCommands, onMeta, onPermission
+			});
+		};
 		s.backend = s.startBackend();
 	} else {
 		// chatMode only makes sense for a supported LLM agent; fall back to an error event.

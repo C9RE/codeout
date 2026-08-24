@@ -44,7 +44,7 @@ function defaultAgents() {
 			apiKey: null,
 			baseUrl: null,
 			defaultModel: 'claude-3-7-sonnet',
-			allowedModels: ['claude-3-7-sonnet', 'claude-3-5-haiku', 'claude-3-opus'],
+			allowedModels: ['claude-3-7-sonnet', 'claude-3-5-sonnet', 'claude-3-5-haiku', 'claude-3-opus'],
 			hasEffort: true,
 			efforts: ['low', 'medium', 'high', 'max']
 		},
@@ -56,7 +56,7 @@ function defaultAgents() {
 			apiKey: null,
 			baseUrl: null,
 			defaultModel: 'o3-mini',
-			allowedModels: ['o3-mini', 'gpt-4o', 'o1'],
+			allowedModels: ['o3-mini', 'gpt-4o', 'o1', 'gpt-4.5-preview'],
 			hasEffort: true,
 			efforts: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']
 		},
@@ -68,7 +68,7 @@ function defaultAgents() {
 			apiKey: null,
 			baseUrl: null,
 			defaultModel: 'gemini-2.5-pro',
-			allowedModels: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+			allowedModels: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
 			hasEffort: false,
 			efforts: []
 		}

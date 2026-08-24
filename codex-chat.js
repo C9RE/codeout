@@ -55,6 +55,8 @@ export function startCodexChat({ cwd, env, resumeId = null, model = null, effort
 		} else {
 			const { approvalPolicy, sandbox } = approvalFor(permissionMode);
 			const params = { cwd, approvalPolicy, sandbox };
+			if (model) params.model = model;
+			if (effort) params.reasoningEffort = effort;
 			// Chat persona + the <options> chip nudge (and any archive-reopen summary) as the thread's
 			// base instructions — Codex's analogue of Claude's --append-system-prompt.
 			params.baseInstructions = extraSystemPrompt ? `${CHAT_SYSTEM_PROMPT}\n\n${extraSystemPrompt}` : CHAT_SYSTEM_PROMPT;
