@@ -212,7 +212,7 @@
 			padding: 28px 20px 48px;
 			display: flex;
 			flex-direction: column;
-			gap: 28px;
+			gap: 20px;
 		}
 
 		.hero-card {
@@ -239,19 +239,57 @@
 			text-wrap: pretty;
 		}
 
-		.section-header {
+		/* Collapsible Section Components */
+		.collapsible-section {
+			display: flex;
+			flex-direction: column;
+			gap: 12px;
+		}
+		.section-header-bar {
 			display: flex;
 			align-items: center;
 			justify-content: space-between;
-			margin-bottom: 12px;
+			padding: 8px 10px;
+			margin: -4px -10px 0;
+			border-radius: 8px;
+			cursor: pointer;
+			user-select: none;
+			transition: background-color 0.15s ease;
 		}
+		.section-header-bar:hover {
+			background: rgba(255, 255, 255, 0.03);
+		}
+		.section-header-bar:active {
+			background: rgba(255, 255, 255, 0.06);
+		}
+		.section-title-wrap {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+		}
+		.section-chevron {
+			width: 14px;
+			height: 14px;
+			color: var(--muted);
+			transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+		}
+		.collapsible-section.collapsed .section-chevron {
+			transform: rotate(-90deg);
+		}
+		.collapsible-section.collapsed .section-content {
+			display: none;
+		}
+
 		.section-title {
-			font-size: 11px;
+			font-size: 11.5px;
 			font-weight: 600;
 			text-transform: uppercase;
 			letter-spacing: 0.06em;
-			color: var(--muted);
+			color: var(--text);
 			font-family: var(--font-mono);
+			display: flex;
+			align-items: center;
+			gap: 8px;
 		}
 
 		.grid-cards {
@@ -561,115 +599,142 @@
 			</div>
 		</div>
 
-		<!-- AI Providers -->
-		<section>
-			<div class="section-header">
-				<span class="section-title">Configured AI Providers</span>
-				<button class="btn btn-ghost" style="height:26px; padding:0 8px;" onclick="loadData()">
+		<!-- Section 1: AI Providers -->
+		<section class="collapsible-section" id="sec-providers">
+			<div class="section-header-bar" onclick="toggleSection('sec-providers')">
+				<div class="section-title-wrap">
+					<svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+					<span class="section-title">
+						<span>AI Providers &amp; Engines</span>
+						<span class="badge badge-pink tabular" id="activeAgentsBadge">3 Configured</span>
+					</span>
+				</div>
+				<button class="btn btn-ghost" style="height:26px; padding:0 8px;" onclick="event.stopPropagation(); loadData();">
 					<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
 					<span>Refresh</span>
 				</button>
 			</div>
 
-			<div class="grid-cards" id="providersGrid">
-				<div class="card" style="grid-column: 1/-1; text-align: center; color: var(--muted); padding: 32px;">
-					Loading host AI configuration...
+			<div class="section-content">
+				<div class="grid-cards" id="providersGrid">
+					<div class="card" style="grid-column: 1/-1; text-align: center; color: var(--muted); padding: 32px;">
+						Loading host AI configuration...
+					</div>
 				</div>
 			</div>
 		</section>
 
-		<!-- Pairing & Security -->
-		<section>
-			<div class="section-header">
-				<span class="section-title">Instant Device Pairing &amp; Security</span>
+		<!-- Section 2: Pairing & Security -->
+		<section class="collapsible-section" id="sec-pairing">
+			<div class="section-header-bar" onclick="toggleSection('sec-pairing')">
+				<div class="section-title-wrap">
+					<svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+					<span class="section-title">
+						<span>Device Pairing &amp; Host Security</span>
+						<span class="badge badge-muted">QR + Master Key</span>
+					</span>
+				</div>
+				<button class="btn btn-ghost" style="height:26px; padding:0 8px;" onclick="event.stopPropagation(); fetchPairCode();">
+					<span>Mint Code</span>
+				</button>
 			</div>
 
-			<div class="grid-cards">
-				<!-- Device Pairing Card -->
-				<div class="card">
-					<div class="card-header">
-						<div>
-							<h3 style="font-size: 14px; font-weight: 600; color: var(--text);">Pair iOS / Web Client</h3>
-							<p style="font-size: 12px; color: var(--muted); margin-top: 2px;">Scan the QR code in the iOS app or enter the code manually.</p>
-						</div>
-					</div>
-
-					<div class="pairing-deck">
-						<div class="qr-wrapper" id="qrFrame">
-							<div class="spinner"></div>
-						</div>
-						<div class="pairing-details">
-							<div style="font-size:11px; color:var(--muted);">Pairing Code</div>
-							<div class="pair-code-display tabular" id="pairCodeText">---- ---- ----</div>
-							<div style="display:flex; gap:6px; margin-top:4px;">
-								<button class="btn btn-primary" style="height:28px; font-size:11px;" onclick="copyPairCode()">
-									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-									<span id="copyBtnText">Copy Code</span>
-								</button>
-								<button class="btn btn-ghost" style="height:28px; font-size:11px;" onclick="fetchPairCode()">
-									<span>Mint New Code</span>
-								</button>
+			<div class="section-content">
+				<div class="grid-cards">
+					<!-- Device Pairing Card -->
+					<div class="card">
+						<div class="card-header">
+							<div>
+								<h3 style="font-size: 14px; font-weight: 600; color: var(--text);">Pair iOS / Web Client</h3>
+								<p style="font-size: 12px; color: var(--muted); margin-top: 2px;">Scan the QR code in the iOS app or enter the code manually.</p>
 							</div>
 						</div>
-					</div>
 
-					<div style="display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--faint);">
-						<span>Fingerprint: <code class="mono" id="fpText" style="color:var(--text)">----</code></span>
-						<span id="expiryTimer">Valid for 5 minutes</span>
-					</div>
-				</div>
+						<div class="pairing-deck">
+							<div class="qr-wrapper" id="qrFrame">
+								<div class="spinner"></div>
+							</div>
+							<div class="pairing-details">
+								<div style="font-size:11px; color:var(--muted);">Pairing Code</div>
+								<div class="pair-code-display tabular" id="pairCodeText">---- ---- ----</div>
+								<div style="display:flex; gap:6px; margin-top:4px;">
+									<button class="btn btn-primary" style="height:28px; font-size:11px;" onclick="copyPairCode()">
+										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+										<span id="copyBtnText">Copy Code</span>
+									</button>
+									<button class="btn btn-ghost" style="height:28px; font-size:11px;" onclick="fetchPairCode()">
+										<span>Mint New Code</span>
+									</button>
+								</div>
+							</div>
+						</div>
 
-				<!-- Master Password Card -->
-				<div class="card">
-					<div class="card-header">
-						<div>
-							<h3 style="font-size: 14px; font-weight: 600; color: var(--text);">Master Password</h3>
-							<p style="font-size: 12px; color: var(--muted); margin-top: 2px;" id="passwordCardStatus">Protects this control deck when accessed over remote tunnels.</p>
+						<div style="display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--faint);">
+							<span>Fingerprint: <code class="mono" id="fpText" style="color:var(--text)">----</code></span>
+							<span id="expiryTimer">Valid for 5 minutes</span>
 						</div>
 					</div>
 
-					<div class="input-group">
-						<input type="password" id="pwInput" placeholder="New Master Password" />
-						<div class="input-row" style="margin-top: 4px;">
-							<input type="password" id="pwConfirm" placeholder="Confirm Password" />
-							<button class="btn btn-primary" style="white-space:nowrap;" onclick="setMasterPassword()">Save</button>
+					<!-- Master Password Card -->
+					<div class="card">
+						<div class="card-header">
+							<div>
+								<h3 style="font-size: 14px; font-weight: 600; color: var(--text);">Master Password</h3>
+								<p style="font-size: 12px; color: var(--muted); margin-top: 2px;" id="passwordCardStatus">Protects this control deck when accessed over remote tunnels.</p>
+							</div>
 						</div>
-						<div class="mono" id="pwStatusText" style="font-size: 11px; margin-top: 4px;"></div>
-					</div>
 
-					<div class="card-footer">
-						<span style="font-size: 11px; color: var(--faint);">Stored securely in <code class="mono" style="color:var(--muted);">~/.codeout/config.json</code> (0600)</span>
+						<div class="input-group">
+							<input type="password" id="pwInput" placeholder="New Master Password" />
+							<div class="input-row" style="margin-top: 4px;">
+								<input type="password" id="pwConfirm" placeholder="Confirm Password" />
+								<button class="btn btn-primary" style="white-space:nowrap;" onclick="setMasterPassword()">Save</button>
+							</div>
+							<div class="mono" id="pwStatusText" style="font-size: 11px; margin-top: 4px;"></div>
+						</div>
+
+						<div class="card-footer">
+							<span style="font-size: 11px; color: var(--faint);">Stored securely in <code class="mono" style="color:var(--muted);">~/.codeout/config.json</code> (0600)</span>
+						</div>
 					</div>
 				</div>
 			</div>
 		</section>
 
-		<!-- Connected Devices Table -->
-		<section>
-			<div class="section-header">
-				<span class="section-title">Connected &amp; Paired Devices</span>
-				<button class="btn btn-ghost" style="height:26px; padding:0 8px;" onclick="loadDevices()">
+		<!-- Section 3: Connected Devices Table -->
+		<section class="collapsible-section" id="sec-devices">
+			<div class="section-header-bar" onclick="toggleSection('sec-devices')">
+				<div class="section-title-wrap">
+					<svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+					<span class="section-title">
+						<span>Connected &amp; Paired Devices</span>
+						<span class="badge badge-ok tabular" id="pairedDevicesBadge">0 Active</span>
+					</span>
+				</div>
+				<button class="btn btn-ghost" style="height:26px; padding:0 8px;" onclick="event.stopPropagation(); loadDevices();">
 					<span>Refresh Devices</span>
 				</button>
 			</div>
 
-			<div class="card" style="padding: 0; overflow: hidden;">
-				<div style="overflow-x: auto;">
-					<table class="devices-table">
-						<thead>
-							<tr>
-								<th>Device Name</th>
-								<th>Device ID</th>
-								<th>Paired On</th>
-								<th style="text-align: right;">Action</th>
-							</tr>
-						</thead>
-						<tbody id="devicesTableBody">
-							<tr>
-								<td colspan="4" style="text-align: center; color: var(--muted); padding: 24px;">Loading paired devices...</td>
-							</tr>
-						</tbody>
-					</table>
+			<div class="section-content">
+				<div class="card" style="padding: 0; overflow: hidden;">
+					<div style="overflow-x: auto;">
+						<table class="devices-table">
+							<thead>
+								<tr>
+									<th>Device Name</th>
+									<th>Device ID</th>
+									<th>Paired On</th>
+									<th style="text-align: right;">Action</th>
+								</tr>
+							</thead>
+							<tbody id="devicesTableBody">
+								<tr>
+									<td colspan="4" style="text-align: center; color: var(--muted); padding: 24px;">Loading paired devices...</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
 				</div>
 			</div>
 		</section>
@@ -699,6 +764,22 @@
 		let adminPassword = sessionStorage.getItem('codeout-admin-pw') || '';
 		const token = new URLSearchParams(window.location.search).get('token') || localStorage.getItem('codeout-owner-token') || '';
 		if (token) localStorage.setItem('codeout-owner-token', token);
+
+		// Section Collapse Handlers
+		function toggleSection(secId) {
+			const sec = document.getElementById(secId);
+			if (!sec) return;
+			const isCollapsed = sec.classList.toggle('collapsed');
+			localStorage.setItem('codeout-collapse-' + secId, isCollapsed ? '1' : '0');
+		}
+
+		function restoreSectionStates() {
+			['sec-providers', 'sec-pairing', 'sec-devices'].forEach(id => {
+				const isCollapsed = localStorage.getItem('codeout-collapse-' + id) === '1';
+				const sec = document.getElementById(id);
+				if (sec && isCollapsed) sec.classList.add('collapsed');
+			});
+		}
 
 		const MODEL_LABELS = {
 			'claude-3-7-sonnet': 'Claude 3.7 Sonnet (Hybrid / Thinking)',
@@ -770,7 +851,11 @@
 			const grid = document.getElementById('providersGrid');
 			grid.innerHTML = '';
 
+			let enabledCount = 0;
+			const totalCount = Object.keys(config.agents).length;
+
 			for (const [id, agent] of Object.entries(config.agents)) {
+				if (agent.enabled) enabledCount++;
 				const info = PROVIDER_INFO[id] || { name: id, desc: '', icon: '' };
 				const card = document.createElement('div');
 				card.className = 'card';
@@ -845,6 +930,9 @@
 				`;
 				grid.appendChild(card);
 			}
+
+			const badge = document.getElementById('activeAgentsBadge');
+			if (badge) badge.textContent = `${enabledCount} of ${totalCount} Active`;
 		}
 
 		async function patchAgent(id, patch) {
@@ -933,6 +1021,8 @@
 				if (!r.ok) throw new Error('HTTP ' + r.status);
 				const data = await r.json();
 				const list = data.devices || [];
+				const badge = document.getElementById('pairedDevicesBadge');
+				if (badge) badge.textContent = `${list.length} Paired`;
 				if (!list.length) {
 					body.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--muted); padding: 24px;">No paired devices yet. Scan the QR code to pair your first device.</td></tr>`;
 					return;
@@ -1024,6 +1114,7 @@
 			}
 		}
 
+		restoreSectionStates();
 		loadData();
 		fetchPairCode();
 		loadDevices();
