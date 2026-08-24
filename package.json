@@ -30,6 +30,7 @@
 		"sessions.js",
 		"archive.js",
 		"crypto.js",
+		"config.js",
 		"auth.js",
 		"pty-bridge.js",
 		"chat-events.js",

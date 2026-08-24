@@ -16,7 +16,8 @@ import { PersistentChatLog, evId } from './chat-events.js';
 import { startClaudeChat } from './claude-chat.js';
 import { startCodexChat } from './codex-chat.js';
 import { startGeminiChat } from './gemini-chat.js';
-import { detectAgents } from './agents.js';
+import { detectAgents, testAgentConnection } from './agents.js';
+import { getAdminConfig, updateAgentConfig, getAgentAuth, getClientAgentsList, setMasterPassword, checkMasterPassword, hasMasterPassword } from './config.js';
 // Chat backend dispatch: agent name → the module that normalizes it to ChatEvents. All take the
 // SAME opts; the host (wireChat/relaunchBackend) is agent-agnostic.
 const CHAT_BACKENDS = { claude: startClaudeChat, codex: startCodexChat, gemini: startGeminiChat, agy: startGeminiChat };
@@ -675,12 +676,21 @@ function wireChat(s, fresh) {
 
 	const makeBackend = CHAT_BACKENDS[s.agent];
 	if (makeBackend) {
+		const auth = getAgentAuth(s.agent);
+		const sessionEnv = { ...env };
+		if (auth.authMode === 'apiKey' && auth.apiKey) {
+			if (s.agent === 'claude') sessionEnv.ANTHROPIC_API_KEY = auth.apiKey;
+			else if (s.agent === 'codex') sessionEnv.OPENAI_API_KEY = auth.apiKey;
+			else if (s.agent === 'gemini' || s.agent === 'agy') sessionEnv.GEMINI_API_KEY = auth.apiKey;
+		}
+		if (!s.model && auth.defaultModel) s.model = auth.defaultModel;
+
 		// Launch (or relaunch) this agent's chat backend. `/model` etc. tear the child down and
 		// call this again with the new flags + the captured resumeId (session_id / threadId), so
 		// the conversation continues with the setting swapped. The SAME opts feed every backend —
 		// Claude, Codex (and later Gemini) all normalize to ChatEvents.
 		s.startBackend = () => makeBackend({
-			cwd: s.cwd, env, resumeId: s.resumeId || null, model: s.model || null, effort: s.effort || null,
+			cwd: s.cwd, env: sessionEnv, resumeId: s.resumeId || null, model: s.model || null, effort: s.effort || null,
 			permissionMode: s.permissionMode || DEFAULT_PERMISSION_MODE,
 			// A session reopened from the archive carries the previous conversation's
 			// summary — appended to the system prompt so the agent starts with context.
@@ -1622,10 +1632,50 @@ export async function handleApi(req, res) {
 		}
 		if (req.method === 'GET' && url.pathname === '/api/projects') {
 			send(200, { root: ROOT, projects: listProjects() });
+		} else if (req.method === 'GET' && url.pathname === '/api/config') {
+			send(200, { config: getAdminConfig(childEnv()) });
+		} else if ((req.method === 'PUT' || req.method === 'POST') && url.pathname.startsWith('/api/config/agents/')) {
+			const m = url.pathname.match(/^\/api\/config\/agents\/([^/]+)$/);
+			const testM = url.pathname.match(/^\/api\/config\/agents\/([^/]+)\/test$/);
+			if (testM && req.method === 'POST') {
+				const agentId = decodeURIComponent(testM[1]);
+				try {
+					const resTest = await testAgentConnection(agentId, childEnv(), getAgentAuth(agentId));
+					send(200, resTest);
+				} catch (e) {
+					send(500, { ok: false, error: String(e?.message ?? e) });
+				}
+				return true;
+			}
+			if (m) {
+				const agentId = decodeURIComponent(m[1]);
+				const body = await readJson(req);
+				try {
+					const updated = updateAgentConfig(agentId, body);
+					send(200, { ok: true, agent: updated });
+				} catch (e) {
+					send(400, { error: String(e?.message ?? e) });
+				}
+				return true;
+			}
+		} else if (req.method === 'POST' && url.pathname === '/api/config/password') {
+			const body = await readJson(req);
+			try {
+				setMasterPassword(body?.password || null);
+				send(200, { ok: true, hasPassword: hasMasterPassword() });
+			} catch (e) {
+				send(400, { error: String(e?.message ?? e) });
+			}
+			return true;
+		} else if (req.method === 'POST' && url.pathname === '/api/config/password/verify') {
+			const body = await readJson(req);
+			const valid = checkMasterPassword(body?.password || '');
+			send(200, { ok: valid });
+			return true;
 		} else if (req.method === 'GET' && url.pathname === '/api/agents') {
-			// Which chat agents this host has (for the new-session picker: installed = selectable,
-			// missing/coming-soon = dimmed + install hint).
-			send(200, { agents: detectAgents(childEnv()) });
+			// Which chat agents this host has & config (for the new-session picker & control deck).
+			const adminCfg = getAdminConfig(childEnv());
+			send(200, { agents: adminCfg.agents, list: getClientAgentsList(childEnv()) });
 		} else if (req.method === 'GET' && url.pathname === '/api/sessions') {
 			send(200, { sessions: list() });
 		} else if (req.method === 'GET' && url.pathname === '/api/pair/code') {

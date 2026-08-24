@@ -1,8 +1,6 @@
-// Agent detection — which chat agents (Claude / Codex / Gemini) are installed on this host, for
-// the client's new-session picker (installed = selectable; missing = "coming soon" + install hint).
-// Probed once (cached; installs are rare) via the daemon's sanitized child env so it resolves the
-// same PATH a spawned agent would. Verified against claude 2.1.x / codex 0.133 / gemini 0.49.
-import { execFileSync } from 'node:child_process';
+// Agent detection & connection testing — which chat agents (Claude / Codex / Gemini) are installed on this host,
+// and live connection tests for the daemon control deck.
+import { execFileSync, spawn } from 'node:child_process';
 
 // `chat:true` = a chat backend is wired in the daemon today (CHAT_BACKENDS in sessions.js).
 const KNOWN = [
@@ -37,3 +35,52 @@ export function detectAgents(env) {
 
 /** Re-probe on the next call (e.g. after the user installs an agent). */
 export function refreshAgents() { cache = null; }
+
+/** Run a fast, single-turn connection test against an agent to verify credentials & responsiveness. */
+export async function testAgentConnection(agentId, env, authConfig = {}) {
+	const start = Date.now();
+	const testEnv = { ...env };
+	if (authConfig.authMode === 'apiKey' && authConfig.apiKey) {
+		if (agentId === 'claude') testEnv.ANTHROPIC_API_KEY = authConfig.apiKey;
+		else if (agentId === 'codex') testEnv.OPENAI_API_KEY = authConfig.apiKey;
+		else if (agentId === 'gemini') testEnv.GEMINI_API_KEY = authConfig.apiKey;
+	}
+
+	return new Promise((resolve) => {
+		let bin = 'claude';
+		let args = ['-p', 'Respond with PONG', '--output-format', 'json'];
+		if (agentId === 'codex') {
+			bin = 'codex';
+			args = ['exec', '--json', 'Respond with PONG'];
+		} else if (agentId === 'gemini') {
+			bin = testEnv?.AGY_CMD || 'agy';
+			args = ['-p', 'Respond with PONG', '--output-format', 'stream-json'];
+		}
+
+		let child;
+		try {
+			child = spawn(bin, args, { env: testEnv, timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] });
+		} catch (e) {
+			return resolve({ ok: false, error: `Failed to spawn ${bin}: ${e?.message ?? e}`, latencyMs: Date.now() - start });
+		}
+
+		let stdout = '';
+		let stderr = '';
+		child.stdout?.on('data', (d) => { stdout += d.toString(); });
+		child.stderr?.on('data', (d) => { stderr += d.toString(); });
+
+		child.on('close', (code) => {
+			const latencyMs = Date.now() - start;
+			if (code === 0) {
+				resolve({ ok: true, latencyMs, output: stdout.slice(0, 200).trim() });
+			} else {
+				const errMsg = stderr.trim() || stdout.trim() || `process exited with code ${code}`;
+				resolve({ ok: false, latencyMs, error: errMsg });
+			}
+		});
+
+		child.on('error', (err) => {
+			resolve({ ok: false, latencyMs: Date.now() - start, error: err.message });
+		});
+	});
+}

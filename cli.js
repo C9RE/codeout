@@ -18,6 +18,7 @@ import qrcode from 'qrcode-terminal';
 import { startDaemon } from './server.js';
 import { TOKEN } from './auth.js';
 import { initCrypto, loadIdentity, daemonPublicKeyB64, daemonFingerprint, mintPairCode, formatPairCode } from './crypto.js';
+import { loadConfig, saveConfig, setMasterPassword, hasMasterPassword } from './config.js';
 import platform from './platform/index.js';
 import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync, chmodSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
@@ -44,7 +45,9 @@ ${pink('codeout')} - your AI coding agents, self-hosted, in your pocket
 
   codeout            run + open a public tunnel: a stable <name>.codeout.dev, reachable anywhere
   codeout --local    local only (LAN + Tailscale); nothing is exposed to the internet
-  codeout --port N   listen on port N (default 8400)
+  codeout --port N   listen on port N (default 8400 or saved config)
+  codeout --setup    interactive configuration wizard (port, password, exposure)
+  codeout --reset-password reset/change the master password for the control deck
   codeout --pair     print a fresh pairing code to add another device
   codeout --install  start on boot (opens the tunnel; add --local for local-only)
   codeout --uninstall remove the boot service
@@ -60,21 +63,20 @@ local-only (LAN / Tailscale / this machine); they never work over the tunnel.
 function parseArgs() {
 	const a = process.argv.slice(2);
 	const i = a.indexOf('--port');
-	const KNOWN = new Set(['--public', '--local', '--pair', '--install', '--uninstall', '--destroy', '--yes', '-y', '--help', '-h', '--port']);
+	const KNOWN = new Set(['--public', '--local', '--pair', '--install', '--uninstall', '--destroy', '--setup', 'setup', '--reset-password', '--yes', '-y', '--help', '-h', '--port']);
+	const cfg = loadConfig();
 	return {
-		// `--public` is accepted but is a NO-OP: the tunnel is already the default, so
-		// nothing reads this. Kept in KNOWN so an old script or a muscle-memory
-		// `codeout --public` doesn't trip the unknown-flag warning below.
 		public: a.includes('--public'),
-		local: a.includes('--local'),
+		local: a.includes('--local') || (!a.includes('--public') && cfg.server?.exposure === 'local'),
 		pair: a.includes('--pair'),
+		setup: a.includes('--setup') || a.includes('setup'),
+		resetPassword: a.includes('--reset-password'),
 		destroy: a.includes('--destroy'),
 		install: a.includes('--install'),
 		uninstall: a.includes('--uninstall'),
 		yes: a.includes('--yes') || a.includes('-y'),
 		help: a.includes('--help') || a.includes('-h'),
-		port: Number(i >= 0 ? a[i + 1] : process.env.PORT) || 8400,
-		// flag-looking tokens we don't recognise (catches typos like --destory)
+		port: Number(i >= 0 ? a[i + 1] : (process.env.PORT || cfg.server?.port)) || 8400,
 		unknown: a.filter((t, idx) => t.startsWith('-') && !KNOWN.has(t) && a[idx - 1] !== '--port')
 	};
 }
@@ -262,6 +264,67 @@ function uninstall() {
 	platform.uninstallService({ dim, pink });
 }
 
+async function runResetPassword() {
+	const rl = createInterface({ input: process.stdin, output: process.stdout });
+	const ask = (q) => new Promise((resolve) => rl.question(q, (a) => resolve(a.trim())));
+	console.log();
+	console.log('  ' + bold('codeout - Reset Master Password'));
+	const pw = await ask('  Enter new master password: ');
+	if (!pw) {
+		console.log(dim('  Password cannot be empty. Aborted.'));
+		rl.close();
+		process.exit(1);
+	}
+	const confirm = await ask('  Confirm new password: ');
+	if (pw !== confirm) {
+		console.log(dim('  Passwords do not match. Aborted.'));
+		rl.close();
+		process.exit(1);
+	}
+	setMasterPassword(pw);
+	console.log('  ' + pink('✓') + ' Master password updated in ~/.codeout/config.json');
+	console.log();
+	rl.close();
+}
+
+async function runSetup() {
+	const rl = createInterface({ input: process.stdin, output: process.stdout });
+	const ask = (q, def) => new Promise((resolve) => rl.question(`  ${q}${def ? ` [${def}]` : ''}: `, (a) => resolve(a.trim() || def)));
+
+	console.log();
+	for (const row of BANNER) console.log('  ' + pink(row));
+	console.log();
+	console.log('  ' + bold('codeout interactive setup & configuration wizard'));
+	console.log('  ' + dim('Configure port, admin password, exposure mode, and AI engines'));
+	console.log();
+
+	const cfg = loadConfig();
+	const defaultPort = cfg.server?.port || 8400;
+	const portAns = await ask('Daemon listen port', String(defaultPort));
+	const port = Number(portAns) || 8400;
+
+	const setPw = await ask('Set/update control deck master password? (y/n)', hasMasterPassword() ? 'n' : 'y');
+	if (setPw.toLowerCase().startsWith('y')) {
+		const pw = await ask('Enter new master password', '');
+		if (pw) {
+			setMasterPassword(pw);
+			console.log('  ' + pink('✓') + ' Master password saved.');
+		}
+	}
+
+	const exp = await ask('Network exposure: 1) Public E2E Tunnel  2) Local/Tailscale only', cfg.server?.exposure === 'local' ? '2' : '1');
+	const exposure = exp === '2' ? 'local' : 'tunnel';
+
+	cfg.server.port = port;
+	cfg.server.exposure = exposure;
+	saveConfig(cfg);
+
+	console.log();
+	console.log('  ' + pink('✓') + ' Configuration saved to ~/.codeout/config.json');
+	console.log();
+	rl.close();
+}
+
 const args = parseArgs();
 if (args.help) { console.log(HELP); process.exit(0); }
 if (args.unknown.length) {
@@ -269,6 +332,8 @@ if (args.unknown.length) {
 	console.log(HELP);
 	process.exit(1);
 }
+if (args.resetPassword) { await runResetPassword(); process.exit(0); }
+if (args.setup) { await runSetup(); process.exit(0); }
 if (args.uninstall) { uninstall(); process.exit(0); }
 if (args.install) { install(args); process.exit(0); }
 
