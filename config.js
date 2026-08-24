@@ -67,10 +67,17 @@ function defaultAgents() {
 			authMode: 'subscription', // 'subscription' | 'apiKey'
 			apiKey: null,
 			baseUrl: null,
-			defaultModel: 'gemini-2.5-pro',
-			allowedModels: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'],
-			hasEffort: false,
-			efforts: []
+			defaultModel: 'gemini-3.5-flash',
+			allowedModels: [
+				'gemini-3.5-flash',
+				'gemini-3.7-flash',
+				'gemini-3.1-pro',
+				'gemini-3.6-flash',
+				'claude-sonnet-4-6',
+				'claude-opus-4-6-thinking'
+			],
+			hasEffort: true,
+			efforts: ['low', 'medium', 'high']
 		}
 	};
 }
