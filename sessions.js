@@ -1597,7 +1597,9 @@ export async function handleApi(req, res) {
 		url.pathname === '/api/agents' ||
 		url.pathname === '/api/devices';
 
-	if (isControlDeckRoute && isLocal && adminPwOk) {
+	if (url.pathname === '/api/config/password/verify') {
+		// Allow password verification attempt
+	} else if (isControlDeckRoute && isLocal && adminPwOk) {
 		// Authorized for local control deck!
 	} else if (!apiAuthOk(req)) {
 		send(401, { error: 'unauthorized', hasPassword: hasPw });
