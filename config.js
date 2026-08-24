@@ -95,11 +95,22 @@ export function loadConfig() {
 	try {
 		if (existsSync(CONFIG_FILE)) {
 			const parsed = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+			const defAgents = defaultAgents();
+			const mergedAgents = {};
+			for (const [id, def] of Object.entries(defAgents)) {
+				const userAgent = parsed.agents?.[id] || {};
+				mergedAgents[id] = {
+					...def,
+					...userAgent,
+					allowedModels: Array.from(new Set([...(def.allowedModels || []), ...(userAgent.allowedModels || [])])),
+					efforts: Array.from(new Set([...(def.efforts || []), ...(userAgent.efforts || [])]))
+				};
+			}
 			configCache = {
 				version: 2,
 				token: parsed.token || undefined,
 				server: { ...defaultConfig().server, ...(parsed.server || {}) },
-				agents: { ...defaultAgents(), ...(parsed.agents || {}) }
+				agents: mergedAgents
 			};
 			return configCache;
 		}
