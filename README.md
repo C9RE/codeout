@@ -43,26 +43,36 @@ Also installs with `npm i -g codeoutcli`. Needs Node 20+ and [`cloudflared`](htt
 
 **Runs natively on macOS, Linux, and Windows.** On macOS/Linux, [`dtach`](https://github.com/crigler/dtach) keeps terminal sessions alive across a daemon restart. Windows runs the agent directly under ConPTY (no `dtach`): terminal sessions survive a client disconnect but not a daemon restart, and chat sessions resume either way. On Windows, install the CLI (it asks which agents you want) with `irm https://codeout.dev/install.ps1 | iex`.
 
-## Agents
+## Agents & Host Control Deck
 
-codeout doesn't ship an AI of its own; it drives the ones you already pay for. Install any mix of:
+codeout doesn't ship an AI of its own; it orchestrates and connects the ones you already use on your hardware:
 
-- **Claude** - the Claude Code CLI (`claude`)
-- **Codex** - `npm i -g @openai/codex`
-- **Gemini** - via the Antigravity CLI (`agy`); runs as a **terminal** agent, not chat (Google cut the gemini CLI off consumer subs on 2026-06-18 — see CHAT-EVENTS.md § Agents)
+- **Claude** — Claude Code CLI (`claude` with Claude 3.7 Sonnet, 3.5 Sonnet, 3.5 Haiku, 3 Opus)
+- **Codex** — OpenAI Codex CLI (`codex` with o3-mini, GPT-4o, o1, GPT-4.5 Preview)
+- **Gemini** — Google Antigravity CLI (`agy` with Gemini 3.5 Flash, 3.7 Flash, 3.1 Pro, 3.6 Flash)
+- **Shell** — Pure native PTY (`bash` / `zsh` / `powershell`)
 
-Or let the one-line installers at [codeout.dev](https://codeout.dev) do it — they ask which agents you want and skip any you already have. Whatever is on your PATH shows up in the picker; the rest stay politely off-screen. Each agent signs in with its own login (an existing subscription, OAuth, or an API key), so codeout never touches your keys and you never pay for the privilege twice. Add another agent's CLI later and it just appears, no reinstall, no ceremony.
+### 🎛️ Server-Authoritative AI Management
+All agent credentials, enabled providers, and model allowlists are configured server-side via the dedicated **Host Control Deck** (`http://localhost:8400/` or over LAN/Tailscale).
+
+- **Multi-Auth**: Use your existing host CLI subscription/OAuth login (zero API token charges), or configure a direct API key with masked storage.
+- **Model Allowlisting**: Pick default models and customize reasoning effort levels.
+- **Master Password**: Optionally protect your host control deck with native scrypt-hashed master authentication.
+- **Zero Leakage**: Secrets stay 100% encrypted in `~/.codeout/config.json` (mode `0600`) on your machine. Client devices never touch raw keys.
 
 ## Quick start
 
 ```sh
 # on your machine
 codeout
-# -> opens a public tunnel (your stable name.codeout.dev) + a QR + a typeable code
+# -> opens the Host Control Deck on http://localhost:8400/
+#    + opens a public tunnel (your stable <name>.codeout.dev) + prints terminal QR & code
 #    (use `codeout --local` to stay on your LAN / Tailscale instead)
 
 # on your phone or browser
-# open the app, enter the address + code (or scan the QR), start a session
+# 1. Open app.codeout.dev (or the native iOS app)
+# 2. Point camera at the QR (in terminal or on http://localhost:8400/), or type the 12-char code
+# 3. Start coding!
 ```
 
 Public by default, so it works from anywhere. Pass `--local` to keep it on your own network (LAN + Tailscale) with nothing exposed to the internet.
