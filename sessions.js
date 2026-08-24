@@ -8,7 +8,7 @@ import Busboy from 'busboy';
 import { homedir } from 'node:os';
 import { basename, join, resolve as resolvePath, isAbsolute, sep, extname } from 'node:path';
 import { existsSync, mkdirSync, createWriteStream, writeFileSync, readFileSync, unlinkSync, readdirSync, statSync, createReadStream, accessSync, realpathSync, rmSync, renameSync, constants as FS } from 'node:fs';
-import { apiTokenOk, apiAuthOk, originOk, bearerToken } from './auth.js';
+import { apiTokenOk, apiAuthOk, originOk, bearerToken, isLocalRequest, isTunnelRequest } from './auth.js';
 import { initCrypto, mintPairCode, consumePairCode, registerDevice, mintDeviceToken, daemonPublicKeyB64, formatPairCode, daemonFingerprint, listDevices, deviceIdForToken, revokeDevice, updateDevice, isValidColour, isValidAvatar, setDevicePush, clearDevicePush, pushTargets } from './crypto.js';
 import { sendPush, apnsEnabled } from './apns.js';
 import { closeDeviceConnections } from './pty-bridge.js';
@@ -1579,8 +1579,25 @@ export async function handleApi(req, res) {
 		await handlePair(req, res, send);
 		return true;
 	}
-	if (!apiAuthOk(req)) {
-		send(401, { error: 'unauthorized' });
+
+	// Local Admin Deck / Control Plane endpoints:
+	// If requested directly from a local network (loopback, LAN, or Tailscale) without passing
+	// through the Cloudflare public tunnel, allow access. If a master password is set, verify
+	// the x-admin-password header or Bearer token.
+	const isLocal = isLocalRequest(req) && !isTunnelRequest(req);
+	const hasPw = hasMasterPassword();
+	const adminHeaderPw = req.headers['x-admin-password'];
+	const adminPwOk = !hasPw || (adminHeaderPw && checkMasterPassword(adminHeaderPw));
+
+	const isControlDeckRoute = url.pathname.startsWith('/api/config') ||
+		url.pathname === '/api/pair/code' ||
+		url.pathname === '/api/agents' ||
+		url.pathname === '/api/devices';
+
+	if (isControlDeckRoute && isLocal && adminPwOk) {
+		// Authorized for local control deck!
+	} else if (!apiAuthOk(req)) {
+		send(401, { error: 'unauthorized', hasPassword: hasPw });
 		return true;
 	}
 	try {
