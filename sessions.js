@@ -16,7 +16,7 @@ import { closeDeviceConnections } from './pty-bridge.js';
 import { PersistentChatLog, evId } from './chat-events.js';
 import { startClaudeChat } from './claude-chat.js';
 import { startCodexChat } from './codex-chat.js';
-import { startGeminiChat } from './gemini-chat.js';
+import { startGeminiChat, resolveGeminiModel } from './gemini-chat.js';
 import { detectAgents, testAgentConnection } from './agents.js';
 import { getAdminConfig, updateAgentConfig, getAgentAuth, getClientAgentsList, setMasterPassword, checkMasterPassword, hasMasterPassword } from './config.js';
 // Chat backend dispatch: agent name → the module that normalizes it to ChatEvents. All take the
@@ -690,6 +690,11 @@ function wireChat(s, fresh) {
 				else if (s.agent === 'gemini' || s.agent === 'agy') sessionEnv.GEMINI_API_KEY = auth.apiKey;
 			}
 			if (!s.model && auth.defaultModel) s.model = auth.defaultModel;
+			if (s.agent === 'gemini' || s.agent === 'agy') {
+				const res = resolveGeminiModel(s.model, s.effort);
+				s.model = res.model;
+				if (res.effort) s.effort = res.effort;
+			}
 
 			return makeBackend({
 				cwd: s.cwd, env: sessionEnv, resumeId: s.resumeId || null, model: s.model || null, effort: s.effort || null,
@@ -724,8 +729,24 @@ function wireChat(s, fresh) {
 	//      one. resetHistory drops the resume id + scrollback so the relaunch is a fresh chat.
 	const relaunchBackend = ({ model, effort, permissionMode, resetHistory } = {}) => {
 		if (!s.startBackend) return false;
-		if (model !== undefined) s.model = model;
-		if (effort !== undefined) s.effort = effort;
+		if (model !== undefined) {
+			if (s.agent === 'gemini' || s.agent === 'agy') {
+				const res = resolveGeminiModel(model, effort !== undefined ? effort : s.effort);
+				s.model = res.model;
+				if (res.effort) s.effort = res.effort;
+			} else {
+				s.model = model;
+			}
+		}
+		if (effort !== undefined) {
+			if (s.agent === 'gemini' || s.agent === 'agy') {
+				const res = resolveGeminiModel(s.model, effort);
+				s.model = res.model;
+				if (res.effort) s.effort = res.effort;
+			} else {
+				s.effort = effort;
+			}
+		}
 		if (permissionMode !== undefined) s.permissionMode = permissionMode;
 		if (resetHistory) {
 			// Forget the resume id so the relaunch is a brand-new claude session, and clear the
@@ -776,12 +797,14 @@ function wireChat(s, fresh) {
 		}
 		if (turnLive) { queueControl({ model }, `Model → ${model}`); return; }
 		if (!relaunchBackend({ model })) {
-			emit({ t: 'error', message: '/model is only available for claude chat sessions.' });
+			emit({ t: 'error', message: `/model is not available for ${s.agent} chat sessions.` });
 			return;
 		}
-		emit({ t: 'system', text: `Model switched to ${model}.` });
+		const display = (s.agent === 'gemini' || s.agent === 'agy') && s.effort ? `${s.model} (${s.effort})` : (s.model || model);
+		emit({ t: 'system', text: `Model switched to ${display}.` });
 		// Reflect the new model in the status bar (init will also confirm it shortly).
-		if (s._statsModel) s._statsModel(model);
+		if (s._statsModel) s._statsModel(s.model || model);
+		if (s._statsEffort && s.effort) s._statsEffort(s.effort);
 		if (s._emitStats) s._emitStats(true);
 	};
 

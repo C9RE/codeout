@@ -68,3 +68,34 @@ test('result event → records token usage', () => {
 	const r = collect({ event: 'result', result: { status: 'SUCCESS', usage: { total_tokens: 2500 } } });
 	assert.deepEqual(r.meta, [{ ctxTokens: 2500 }]);
 });
+
+test('resolveGeminiModel resolves aliases, shorthands, efforts, and legacy models', async () => {
+	const { resolveGeminiModel } = await import('../gemini-chat.js');
+
+	// Shorthands
+	assert.deepEqual(resolveGeminiModel('3.8'), { model: 'gemini-3.8-flash', effort: 'medium' });
+	assert.deepEqual(resolveGeminiModel('3.8', 'high'), { model: 'gemini-3.8-flash', effort: 'high' });
+	assert.deepEqual(resolveGeminiModel('3.8 high'), { model: 'gemini-3.8-flash', effort: 'high' });
+	assert.deepEqual(resolveGeminiModel('3.8-high'), { model: 'gemini-3.8-flash', effort: 'high' });
+	assert.deepEqual(resolveGeminiModel('flash'), { model: 'gemini-3.8-flash', effort: 'medium' });
+	assert.deepEqual(resolveGeminiModel('3.7'), { model: 'gemini-3.7-flash', effort: 'medium' });
+	assert.deepEqual(resolveGeminiModel('3.6'), { model: 'gemini-3.6-flash', effort: 'medium' });
+
+	// Pro models (no medium in agy)
+	assert.deepEqual(resolveGeminiModel('3.1'), { model: 'gemini-3.1-pro', effort: 'high' });
+	assert.deepEqual(resolveGeminiModel('pro'), { model: 'gemini-3.1-pro', effort: 'high' });
+	assert.deepEqual(resolveGeminiModel('3.1', 'low'), { model: 'gemini-3.1-pro', effort: 'low' });
+	assert.deepEqual(resolveGeminiModel('gemini-3.1-pro', 'medium'), { model: 'gemini-3.1-pro', effort: 'high' });
+
+	// Other agy models with no effort
+	assert.deepEqual(resolveGeminiModel('sonnet'), { model: 'claude-sonnet-4-6', effort: null });
+	assert.deepEqual(resolveGeminiModel('claude-sonnet-4-6', 'medium'), { model: 'claude-sonnet-4-6', effort: null });
+	assert.deepEqual(resolveGeminiModel('opus'), { model: 'claude-opus-4-6-thinking', effort: null });
+	assert.deepEqual(resolveGeminiModel('gpt-oss-120b-medium', 'high'), { model: 'gpt-oss-120b-medium', effort: null });
+
+	// Legacy migration
+	assert.deepEqual(resolveGeminiModel('gemini-2.5-pro'), { model: 'gemini-3.8-flash', effort: 'medium' });
+	assert.deepEqual(resolveGeminiModel('gemini-3.5-flash'), { model: 'gemini-3.8-flash', effort: 'medium' });
+	assert.deepEqual(resolveGeminiModel(null), { model: 'gemini-3.8-flash', effort: 'medium' });
+});
+

@@ -67,14 +67,15 @@ function defaultAgents() {
 			authMode: 'subscription', // 'subscription' | 'apiKey'
 			apiKey: null,
 			baseUrl: null,
-			defaultModel: 'gemini-3.5-flash',
+			defaultModel: 'gemini-3.8-flash',
 			allowedModels: [
-				'gemini-3.5-flash',
+				'gemini-3.8-flash',
 				'gemini-3.7-flash',
-				'gemini-3.1-pro',
 				'gemini-3.6-flash',
+				'gemini-3.1-pro',
 				'claude-sonnet-4-6',
-				'claude-opus-4-6-thinking'
+				'claude-opus-4-6-thinking',
+				'gpt-oss-120b-medium'
 			],
 			hasEffort: true,
 			efforts: ['low', 'medium', 'high']
@@ -112,6 +113,19 @@ export function loadConfig() {
 					allowedModels: Array.from(new Set([...(def.allowedModels || []), ...(userAgent.allowedModels || [])])),
 					efforts: Array.from(new Set([...(def.efforts || []), ...(userAgent.efforts || [])]))
 				};
+				if (id === 'gemini') {
+					// Clean out legacy / unsupported models that agy rejects
+					mergedAgents[id].allowedModels = mergedAgents[id].allowedModels.filter(
+						(m) => !m.startsWith('gemini-2.5') && !m.startsWith('gemini-3.5')
+					);
+					if (
+						!mergedAgents[id].defaultModel ||
+						mergedAgents[id].defaultModel.startsWith('gemini-2.5') ||
+						mergedAgents[id].defaultModel.startsWith('gemini-3.5')
+					) {
+						mergedAgents[id].defaultModel = 'gemini-3.8-flash';
+					}
+				}
 			}
 			configCache = {
 				version: 2,
@@ -272,6 +286,7 @@ export function getClientAgentsList(env) {
 			version: det.version,
 			authMode: agent.authMode,
 			defaultModel: agent.defaultModel,
+			allowedModels: agent.allowedModels || [],
 			models: agent.allowedModels || [],
 			hasEffort: Boolean(agent.hasEffort),
 			efforts: agent.efforts || []
