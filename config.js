@@ -262,7 +262,10 @@ export function getAgentAuth(agentId) {
 		authMode: agent.authMode || 'subscription',
 		apiKey: agent.apiKey || null,
 		baseUrl: agent.baseUrl || null,
-		defaultModel: agent.defaultModel || null
+		defaultModel: agent.defaultModel || null,
+		allowedModels: agent.allowedModels || [],
+		hasEffort: Boolean(agent.hasEffort),
+		efforts: agent.efforts || []
 	};
 }
 

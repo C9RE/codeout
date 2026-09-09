@@ -422,22 +422,24 @@ function wireChat(s, fresh) {
 
 	const env = childEnv();
 	const onResume = (id) => { s.resumeId = id; persist(); };
-	// Daemon-curated built-in commands that DO work headless (handled daemon-side, not by the
-	// agent). TUI-only built-ins (/compact, /agents, /help …) are intentionally omitted - they
-	// have no headless behaviour. Clients merge these with the agent's plugin `commands`.
-	const BUILTIN_COMMANDS = [
-		{ name: 'model', description: 'Switch model' },
-		{ name: 'effort', description: 'low|medium|high|xhigh|max' },
-		{ name: 'mode', description: 'default|acceptEdits|plan|bypassPermissions' },
-		{ name: 'clear', description: 'Start a fresh chat' }
-	];
+	const getBuiltinsForAgent = () => {
+		const auth = getAgentAuth(s.agent);
+		const allowedModels = auth.allowedModels || [];
+		const efforts = auth.efforts || ['low', 'medium', 'high'];
+		return [
+			{ name: 'model', description: 'Switch model', options: allowedModels },
+			{ name: 'effort', description: efforts.join('|'), options: efforts },
+			{ name: 'mode', description: 'default|acceptEdits|plan|bypassPermissions', options: ['default', 'acceptEdits', 'plan', 'bypassPermissions'] },
+			{ name: 'clear', description: 'Start a fresh chat' }
+		];
+	};
 	// init carries the agent's slash-command list; relay it once so clients can offer a
 	// `/` autocomplete. Re-emitted on a backend relaunch (e.g. /model) - same event, new seq.
 	// `commands` is the agent's plugin/skill list; `builtins` is the daemon's curated list.
 	const onSlashCommands = (commands) => {
 		if (!Array.isArray(commands)) return;
 		s.slashCommands = commands;
-		emit({ t: 'slash-commands', commands, builtins: BUILTIN_COMMANDS });
+		emit({ t: 'slash-commands', commands, builtins: getBuiltinsForAgent() });
 	};
 
 	// ----- stats / status-bar meta -----
@@ -792,7 +794,16 @@ function wireChat(s, fresh) {
 		// Echo the command as a user bubble so the transcript shows what was asked.
 		emit({ t: 'user', id: evId(), text: `/model ${model}`.trim(), senderId, senderName });
 		if (!model) {
-			emit({ t: 'system', text: s.model ? `Current model: ${s.model}. Use /model <name> to switch.` : 'Using the default model. Use /model <name> to switch.' });
+			const auth = getAgentAuth(s.agent);
+			const allowed = auth.allowedModels || [];
+			const current = s.model ? `Current model: **${s.model}**.` : 'Using default model.';
+			let text = `${current} Choose a model to switch:`;
+			if (allowed.length > 0) {
+				text += '\n<options>\n' + allowed.map(m => `<option value="/model ${m}">${m}</option>`).join('\n') + '\n</options>';
+			} else {
+				text += ' Use `/model <name>` to switch.';
+			}
+			emit({ t: 'system', text });
 			return;
 		}
 		if (turnLive) { queueControl({ model }, `Model → ${model}`); return; }
@@ -817,7 +828,16 @@ function wireChat(s, fresh) {
 		const effort = String(level || '').trim().toLowerCase();
 		emit({ t: 'user', id: evId(), text: `/effort ${effort}`.trim(), senderId, senderName });
 		if (!effort) {
-			emit({ t: 'system', text: s.effort ? `Current effort: ${s.effort}. Use /effort <low|medium|high|xhigh|max> to change.` : 'Using the default effort. Use /effort <low|medium|high|xhigh|max> to change.' });
+			const auth = getAgentAuth(s.agent);
+			const efforts = auth.efforts || ['low', 'medium', 'high'];
+			const current = s.effort ? `Current effort: **${s.effort}**.` : 'Using default effort.';
+			let text = `${current} Choose reasoning effort:`;
+			if (efforts.length > 0) {
+				text += '\n<options>\n' + efforts.map(e => `<option value="/effort ${e}">${e}</option>`).join('\n') + '\n</options>';
+			} else {
+				text += ' Use `/effort <low|medium|high>` to change.';
+			}
+			emit({ t: 'system', text });
 			return;
 		}
 		if (!EFFORT_LEVELS.has(effort)) {
@@ -826,7 +846,7 @@ function wireChat(s, fresh) {
 		}
 		if (turnLive) { queueControl({ effort }, `Effort → ${effort}`); return; }
 		if (!relaunchBackend({ effort })) {
-			emit({ t: 'error', message: '/effort is only available for claude chat sessions.' });
+			emit({ t: 'error', message: `/effort is not available for ${s.agent} chat sessions.` });
 			return;
 		}
 		emit({ t: 'system', text: `Effort → ${effort}.` });
@@ -843,7 +863,11 @@ function wireChat(s, fresh) {
 		emit({ t: 'user', id: evId(), text: `/mode ${mode}`.trim(), senderId, senderName });
 		const cur = s.permissionMode || DEFAULT_PERMISSION_MODE;
 		if (!mode) {
-			emit({ t: 'system', text: `Current permission mode: ${cur}. Use /mode <default|acceptEdits|plan|bypassPermissions> to change.` });
+			const modes = ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
+			const text = `Current permission mode: **${cur}**. Choose permission mode:\n<options>\n` +
+				modes.map(m => `<option value="/mode ${m}">${m}</option>`).join('\n') +
+				'\n</options>';
+			emit({ t: 'system', text });
 			return;
 		}
 		if (!validatePermissionMode(mode)) {
@@ -852,7 +876,7 @@ function wireChat(s, fresh) {
 		}
 		if (turnLive) { queueControl({ permissionMode: mode }, `Permission mode → ${mode}`); return; }
 		if (!relaunchBackend({ permissionMode: mode })) {
-			emit({ t: 'error', message: '/mode is only available for claude chat sessions.' });
+			emit({ t: 'error', message: `/mode is not available for ${s.agent} chat sessions.` });
 			return;
 		}
 		emit({ t: 'system', text: `Permission mode → ${mode}.` });
