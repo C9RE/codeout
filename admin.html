@@ -1,0 +1,1205 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+	<title>codeout &bull; host control deck</title>
+	<link rel="icon" href="/logo-mark.png?v=2" />
+	<style>
+		@font-face {
+			font-family: 'IBM Plex Sans';
+			src: url('/fonts/ibm-plex-sans-400.woff2') format('woff2');
+			font-weight: 400;
+			font-style: normal;
+			font-display: swap;
+		}
+		@font-face {
+			font-family: 'IBM Plex Sans';
+			src: url('/fonts/ibm-plex-sans-500.woff2') format('woff2');
+			font-weight: 500;
+			font-style: normal;
+			font-display: swap;
+		}
+		@font-face {
+			font-family: 'IBM Plex Sans';
+			src: url('/fonts/ibm-plex-sans-600.woff2') format('woff2');
+			font-weight: 600;
+			font-style: normal;
+			font-display: swap;
+		}
+		@font-face {
+			font-family: 'IBM Plex Mono';
+			src: url('/fonts/ibm-plex-mono-400.woff2') format('woff2');
+			font-weight: 400;
+			font-style: normal;
+			font-display: swap;
+		}
+		@font-face {
+			font-family: 'IBM Plex Mono';
+			src: url('/fonts/ibm-plex-mono-500.woff2') format('woff2');
+			font-weight: 500;
+			font-style: normal;
+			font-display: swap;
+		}
+
+		:root {
+			--bg: #0b0d10;
+			--surface: #12151a;
+			--card: #161619;
+			--border: #222831;
+			--border-soft: #1a1e25;
+			--text: #e8ebf0;
+			--muted: #8b93a1;
+			--faint: #7f8794;
+			--accent: #ff6ac1;
+			--accent-dim: #ff8fd0;
+			--accent-text: #ff8fd0;
+			--ink: #1a0610;
+			--ok: #9ece6a;
+			--err: #ff6b81;
+			--nav-bg: rgba(11, 13, 16, 0.85);
+			--font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+			--font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+			--elev-1: 0 1px 2px rgba(0, 0, 0, 0.3);
+			--elev-2: 0 4px 16px -6px rgba(0, 0, 0, 0.5);
+			--elev-3: 0 12px 36px -10px rgba(0, 0, 0, 0.6);
+		}
+
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+		body {
+			background: var(--bg);
+			color: var(--text);
+			font-family: var(--font-sans);
+			font-size: 13.5px;
+			line-height: 1.5;
+			min-height: 100vh;
+			display: flex;
+			flex-direction: column;
+			-webkit-font-smoothing: antialiased;
+			-moz-osx-font-smoothing: grayscale;
+		}
+
+		.mono { font-family: var(--font-mono); }
+		.tabular { font-variant-numeric: tabular-nums; }
+
+		header {
+			position: sticky;
+			top: 0;
+			z-index: 100;
+			display: flex;
+			height: 56px;
+			align-items: center;
+			justify-content: space-between;
+			border-bottom: 1px solid var(--border-soft);
+			background: var(--nav-bg);
+			padding: 0 24px;
+			backdrop-filter: blur(12px);
+		}
+
+		.brand {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			text-decoration: none;
+			color: var(--text);
+		}
+		.brand img {
+			width: 28px;
+			height: 28px;
+			border-radius: 6px;
+			outline: 1px solid rgba(255, 255, 255, 0.1);
+		}
+		.brand-name {
+			font-size: 16px;
+			font-weight: 600;
+			letter-spacing: -0.02em;
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+
+		.badge {
+			display: inline-flex;
+			align-items: center;
+			gap: 5px;
+			font-family: var(--font-mono);
+			font-size: 10.5px;
+			font-weight: 500;
+			padding: 2px 8px;
+			border-radius: 9999px;
+			border: 1px solid transparent;
+		}
+		.badge-pink {
+			background: rgba(255, 106, 193, 0.12);
+			color: var(--accent);
+			border-color: rgba(255, 106, 193, 0.25);
+		}
+		.badge-ok {
+			background: rgba(158, 206, 106, 0.12);
+			color: var(--ok);
+			border-color: rgba(158, 206, 106, 0.25);
+		}
+		.badge-err {
+			background: rgba(255, 107, 129, 0.12);
+			color: var(--err);
+			border-color: rgba(255, 107, 129, 0.25);
+		}
+		.badge-muted {
+			background: rgba(255, 255, 255, 0.05);
+			color: var(--muted);
+			border-color: var(--border);
+		}
+
+		.status-dot {
+			width: 6px;
+			height: 6px;
+			background: var(--ok);
+			border-radius: 50%;
+			box-shadow: 0 0 8px var(--ok);
+		}
+
+		.header-actions {
+			display: flex;
+			align-items: center;
+			gap: 12px;
+		}
+
+		.btn {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			gap: 6px;
+			height: 32px;
+			padding: 0 12px;
+			border-radius: 6px;
+			font-family: var(--font-sans);
+			font-size: 12px;
+			font-weight: 500;
+			cursor: pointer;
+			text-decoration: none;
+			border: 1px solid transparent;
+			transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+		}
+		.btn:active { transform: scale(0.96); }
+		.btn-primary {
+			background: var(--accent);
+			color: var(--ink);
+			font-weight: 600;
+		}
+		.btn-primary:hover { background: var(--accent-dim); }
+		.btn-ghost {
+			background: rgba(255, 255, 255, 0.04);
+			color: var(--text);
+			border-color: var(--border);
+		}
+		.btn-ghost:hover {
+			background: rgba(255, 255, 255, 0.08);
+			border-color: var(--border-soft);
+		}
+		.btn-danger {
+			background: rgba(255, 107, 129, 0.12);
+			color: var(--err);
+			border-color: rgba(255, 107, 129, 0.25);
+		}
+		.btn-danger:hover {
+			background: rgba(255, 107, 129, 0.2);
+		}
+
+		main {
+			max-width: 960px;
+			width: 100%;
+			margin: 0 auto;
+			padding: 28px 20px 48px;
+			display: flex;
+			flex-direction: column;
+			gap: 20px;
+		}
+
+		.hero-card {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			background: linear-gradient(180deg, rgba(255, 106, 193, 0.05) 0%, rgba(22, 22, 25, 0.6) 100%);
+			border: 1px solid rgba(255, 106, 193, 0.18);
+			border-radius: 12px;
+			padding: 20px 24px;
+			box-shadow: var(--elev-1);
+		}
+		.hero-title {
+			font-size: 16px;
+			font-weight: 600;
+			letter-spacing: -0.01em;
+			color: var(--text);
+			text-wrap: balance;
+		}
+		.hero-subtitle {
+			font-size: 12.5px;
+			color: var(--muted);
+			margin-top: 4px;
+			text-wrap: pretty;
+		}
+
+		/* Collapsible Section Components */
+		.collapsible-section {
+			display: flex;
+			flex-direction: column;
+			gap: 12px;
+		}
+		.section-header-bar {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding: 8px 10px;
+			margin: -4px -10px 0;
+			border-radius: 8px;
+			cursor: pointer;
+			user-select: none;
+			transition: background-color 0.15s ease;
+		}
+		.section-header-bar:hover {
+			background: rgba(255, 255, 255, 0.03);
+		}
+		.section-header-bar:active {
+			background: rgba(255, 255, 255, 0.06);
+		}
+		.section-title-wrap {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+		}
+		.section-chevron {
+			width: 14px;
+			height: 14px;
+			color: var(--muted);
+			transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+		}
+		.collapsible-section.collapsed .section-chevron {
+			transform: rotate(-90deg);
+		}
+		.collapsible-section.collapsed .section-content {
+			display: none;
+		}
+
+		.section-title {
+			font-size: 11.5px;
+			font-weight: 600;
+			text-transform: uppercase;
+			letter-spacing: 0.06em;
+			color: var(--text);
+			font-family: var(--font-mono);
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+
+		.grid-cards {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+			gap: 16px;
+		}
+		@media (max-width: 640px) {
+			.grid-cards { grid-template-columns: 1fr; }
+		}
+
+		.card {
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: 12px;
+			padding: 18px;
+			display: flex;
+			flex-direction: column;
+			gap: 14px;
+			box-shadow: var(--elev-1);
+			transition: border-color 0.15s ease;
+		}
+		.card:hover {
+			border-color: rgba(255, 255, 255, 0.14);
+		}
+
+		.card-header {
+			display: flex;
+			align-items: flex-start;
+			justify-content: space-between;
+		}
+		.agent-lead {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+		}
+		.agent-icon {
+			width: 24px;
+			height: 24px;
+			color: var(--accent);
+			display: grid;
+			place-items: center;
+		}
+		.agent-name {
+			font-size: 14px;
+			font-weight: 600;
+			color: var(--text);
+			display: flex;
+			align-items: center;
+			gap: 6px;
+		}
+		.agent-desc {
+			font-size: 12px;
+			color: var(--muted);
+			margin-top: 2px;
+		}
+
+		.toggle-switch {
+			position: relative;
+			display: inline-flex;
+			align-items: center;
+			cursor: pointer;
+		}
+		.toggle-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+		.toggle-track {
+			width: 36px;
+			height: 20px;
+			background: rgba(255, 255, 255, 0.1);
+			border-radius: 9999px;
+			position: relative;
+			transition: background-color 0.15s ease;
+		}
+		.toggle-switch input:checked + .toggle-track { background: var(--accent); }
+		.toggle-thumb {
+			position: absolute;
+			top: 2px;
+			left: 2px;
+			width: 16px;
+			height: 16px;
+			background: #fff;
+			border-radius: 50%;
+			transition: transform 0.15s ease;
+		}
+		.toggle-switch input:checked + .toggle-track .toggle-thumb {
+			transform: translateX(16px);
+			background: var(--ink);
+		}
+
+		.mode-pill-group {
+			display: flex;
+			background: var(--bg);
+			border: 1px solid var(--border);
+			border-radius: 8px;
+			padding: 2px;
+			gap: 2px;
+		}
+		.mode-pill {
+			flex: 1;
+			height: 28px;
+			border: none;
+			background: transparent;
+			color: var(--muted);
+			font-family: var(--font-sans);
+			font-size: 11.5px;
+			font-weight: 500;
+			border-radius: 6px;
+			cursor: pointer;
+			transition: color 0.15s ease, background-color 0.15s ease;
+		}
+		.mode-pill.active {
+			background: rgba(255, 255, 255, 0.08);
+			color: var(--text);
+			font-weight: 600;
+		}
+		.mode-pill.active.pink {
+			background: rgba(255, 106, 193, 0.15);
+			color: var(--accent);
+		}
+
+		.input-group {
+			display: flex;
+			flex-direction: column;
+			gap: 5px;
+		}
+		.input-label {
+			font-size: 11px;
+			font-weight: 500;
+			color: var(--muted);
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+		}
+		.input-row {
+			display: flex;
+			gap: 6px;
+		}
+		input[type="text"], input[type="password"], select {
+			width: 100%;
+			height: 32px;
+			background: var(--bg);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			padding: 0 10px;
+			color: var(--text);
+			font-family: var(--font-mono);
+			font-size: 12px;
+			outline: none;
+			transition: border-color 0.15s ease;
+		}
+		input:focus, select:focus {
+			border-color: var(--accent);
+		}
+
+		.card-footer {
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			padding-top: 10px;
+			border-top: 1px solid var(--border-soft);
+			margin-top: auto;
+		}
+
+		.result-readout {
+			font-family: var(--font-mono);
+			font-size: 11px;
+			display: flex;
+			align-items: center;
+			gap: 5px;
+		}
+
+		/* QR & Pairing Layout */
+		.pairing-deck {
+			display: flex;
+			align-items: center;
+			gap: 20px;
+			background: var(--bg);
+			border: 1px solid var(--border);
+			border-radius: 10px;
+			padding: 16px;
+			margin: 10px 0;
+		}
+		@media (max-width: 540px) {
+			.pairing-deck { flex-direction: column; text-align: center; }
+		}
+		.qr-wrapper {
+			background: #ffffff;
+			padding: 8px;
+			border-radius: 8px;
+			width: 136px;
+			height: 136px;
+			flex-shrink: 0;
+			display: grid;
+			place-items: center;
+		}
+		.qr-wrapper img {
+			width: 120px;
+			height: 120px;
+			display: block;
+		}
+		.pairing-details {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		}
+		.pair-code-display {
+			font-family: var(--font-mono);
+			font-size: 22px;
+			font-weight: 600;
+			letter-spacing: 0.08em;
+			color: var(--accent);
+		}
+
+		/* Devices Table */
+		.devices-table {
+			width: 100%;
+			border-collapse: collapse;
+			font-size: 12px;
+		}
+		.devices-table th {
+			text-align: left;
+			font-size: 10.5px;
+			font-family: var(--font-mono);
+			color: var(--muted);
+			padding: 8px 10px;
+			border-bottom: 1px solid var(--border);
+			text-transform: uppercase;
+		}
+		.devices-table td {
+			padding: 10px;
+			border-bottom: 1px solid var(--border-soft);
+			color: var(--text);
+		}
+		.devices-table tr:last-child td { border-bottom: none; }
+
+		/* Lock Overlay Modal */
+		#lockOverlay {
+			position: fixed;
+			inset: 0;
+			background: rgba(11, 13, 16, 0.92);
+			backdrop-filter: blur(16px);
+			z-index: 500;
+			display: none;
+			place-items: center;
+			padding: 20px;
+		}
+		.lock-card {
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: 12px;
+			padding: 28px;
+			max-width: 380px;
+			width: 100%;
+			box-shadow: var(--elev-3);
+			display: flex;
+			flex-direction: column;
+			gap: 16px;
+			text-align: center;
+		}
+
+		footer {
+			margin-top: auto;
+			border-top: 1px solid var(--border-soft);
+			padding: 18px 24px;
+			text-align: center;
+			font-size: 12px;
+			color: var(--faint);
+		}
+		footer a { color: var(--muted); text-decoration: none; }
+		footer a:hover { color: var(--accent); }
+
+		.spinner {
+			width: 12px;
+			height: 12px;
+			border: 2px solid rgba(255,255,255,0.2);
+			border-top-color: var(--accent);
+			border-radius: 50%;
+			animation: spin 0.6s linear infinite;
+		}
+		@keyframes spin { to { transform: rotate(360deg); } }
+	</style>
+</head>
+<body>
+	<header>
+		<a href="/" class="brand">
+			<img src="/logo-mark.png?v=2" alt="codeout" />
+			<span class="brand-name">codeout</span>
+		</a>
+		<div class="header-actions">
+			<a href="https://codeout.dev/docs" target="_blank" class="btn btn-ghost">
+				<span>Open Docs</span>
+				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+			</a>
+			<a href="https://app.codeout.dev" target="_blank" class="btn btn-primary">
+				<span>Open Web App</span>
+				<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+			</a>
+		</div>
+	</header>
+
+	<main>
+		<div class="hero-card">
+			<div>
+				<h2 class="hero-title">Host Server &amp; AI Control Plane</h2>
+				<p class="hero-subtitle">Dictate active providers, model allowlists, and pairing. Secrets stay encrypted on this host.</p>
+			</div>
+			<div style="text-align: right;">
+				<div class="mono" style="font-size: 12px; color: var(--text);" id="serverEndpoint">Loading...</div>
+				<div class="mono" style="font-size: 11px; color: var(--faint); margin-top: 3px;" id="serverSubEndpoint">Local Network &bull; Wi-Fi &bull; Tailnet</div>
+			</div>
+		</div>
+
+		<!-- Section 1: AI Providers -->
+		<section class="collapsible-section" id="sec-providers">
+			<div class="section-header-bar" onclick="toggleSection('sec-providers')">
+				<div class="section-title-wrap">
+					<svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+					<span class="section-title">
+						<span>AI Providers &amp; Engines</span>
+						<span class="badge badge-pink tabular" id="activeAgentsBadge">3 Configured</span>
+					</span>
+				</div>
+				<button class="btn btn-ghost" style="height:26px; padding:0 8px;" onclick="event.stopPropagation(); loadData();">
+					<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+					<span>Refresh</span>
+				</button>
+			</div>
+
+			<div class="section-content">
+				<div class="grid-cards" id="providersGrid">
+					<div class="card" style="grid-column: 1/-1; text-align: center; color: var(--muted); padding: 32px;">
+						Loading host AI configuration...
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- Section 2: Pairing & Security -->
+		<section class="collapsible-section" id="sec-pairing">
+			<div class="section-header-bar" onclick="toggleSection('sec-pairing')">
+				<div class="section-title-wrap">
+					<svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+					<span class="section-title">
+						<span>Device Pairing &amp; Host Security</span>
+						<span class="badge badge-muted">QR + Master Key</span>
+					</span>
+				</div>
+				<button class="btn btn-ghost" style="height:26px; padding:0 8px;" onclick="event.stopPropagation(); fetchPairCode();">
+					<span>Mint Code</span>
+				</button>
+			</div>
+
+			<div class="section-content">
+				<div class="grid-cards">
+					<!-- Device Pairing Card -->
+					<div class="card">
+						<div class="card-header">
+							<div>
+								<h3 style="font-size: 14px; font-weight: 600; color: var(--text);">Pair iOS / Web Client</h3>
+								<p style="font-size: 12px; color: var(--muted); margin-top: 2px;">Scan the QR code in the iOS app or enter the code manually.</p>
+							</div>
+						</div>
+
+						<div class="pairing-deck">
+							<div class="qr-wrapper" id="qrFrame">
+								<div class="spinner"></div>
+							</div>
+							<div class="pairing-details">
+								<div style="font-size:11px; color:var(--muted);">Pairing Code</div>
+								<div class="pair-code-display tabular" id="pairCodeText">---- ---- ----</div>
+								<div style="display:flex; gap:6px; margin-top:4px;">
+									<button class="btn btn-primary" style="height:28px; font-size:11px;" onclick="copyPairCode()">
+										<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+										<span id="copyBtnText">Copy Code</span>
+									</button>
+									<button class="btn btn-ghost" style="height:28px; font-size:11px;" onclick="fetchPairCode()">
+										<span>Mint New Code</span>
+									</button>
+								</div>
+							</div>
+						</div>
+
+						<div style="display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--faint);">
+							<span>Fingerprint: <code class="mono" id="fpText" style="color:var(--text)">----</code></span>
+							<span id="expiryTimer">Valid for 5 minutes</span>
+						</div>
+					</div>
+
+					<!-- Master Password Card -->
+					<div class="card">
+						<div class="card-header">
+							<div>
+								<div style="display:flex; align-items:center; gap:8px;">
+									<h3 style="font-size: 14px; font-weight: 600; color: var(--text);">Panel Password Protection</h3>
+									<span class="badge badge-muted" id="passwordBadge">Unprotected</span>
+								</div>
+								<p style="font-size: 12px; color: var(--muted); margin-top: 2px;" id="passwordCardStatus">Gates this control deck behind master password authentication.</p>
+							</div>
+							<div style="display:flex; gap:6px;">
+								<button class="btn btn-ghost" id="lockDeckBtn" style="display:none; height:26px; padding:0 8px; font-size:11px;" onclick="lockDeckNow()">
+									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+									<span>Lock Now</span>
+								</button>
+								<button class="btn btn-danger" id="removePwBtn" style="display:none; height:26px; padding:0 8px; font-size:11px;" onclick="removeMasterPassword()">
+									<span>Remove</span>
+								</button>
+							</div>
+						</div>
+
+						<div class="input-group">
+							<input type="password" id="pwInput" placeholder="Enter new master password" />
+							<div class="input-row" style="margin-top: 4px;">
+								<input type="password" id="pwConfirm" placeholder="Confirm password" />
+								<button class="btn btn-primary" style="white-space:nowrap;" onclick="setMasterPassword()">Set Password</button>
+							</div>
+							<div class="mono" id="pwStatusText" style="font-size: 11px; margin-top: 4px;"></div>
+						</div>
+
+						<div class="card-footer">
+							<span style="font-size: 11px; color: var(--faint);">Stored securely with scrypt hashing in <code class="mono" style="color:var(--muted);">~/.codeout/config.json</code></span>
+						</div>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<!-- Section 3: Connected Devices Table -->
+		<section class="collapsible-section" id="sec-devices">
+			<div class="section-header-bar" onclick="toggleSection('sec-devices')">
+				<div class="section-title-wrap">
+					<svg class="section-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+					<span class="section-title">
+						<span>Connected &amp; Paired Devices</span>
+						<span class="badge badge-ok tabular" id="pairedDevicesBadge">0 Active</span>
+					</span>
+				</div>
+				<button class="btn btn-ghost" style="height:26px; padding:0 8px;" onclick="event.stopPropagation(); loadDevices();">
+					<span>Refresh Devices</span>
+				</button>
+			</div>
+
+			<div class="section-content">
+				<div class="card" style="padding: 0; overflow: hidden;">
+					<div style="overflow-x: auto;">
+						<table class="devices-table">
+							<thead>
+								<tr>
+									<th>Device Name</th>
+									<th>Device ID</th>
+									<th>Paired On</th>
+									<th style="text-align: right;">Action</th>
+								</tr>
+							</thead>
+							<tbody id="devicesTableBody">
+								<tr>
+									<td colspan="4" style="text-align: center; color: var(--muted); padding: 24px;">Loading paired devices...</td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</section>
+	</main>
+
+	<!-- Lock Overlay Modal -->
+	<div id="lockOverlay">
+		<div class="lock-card">
+			<img src="/logo-mark.png?v=2" alt="codeout" style="width:40px; height:40px; margin: 0 auto; border-radius:8px;" />
+			<div>
+				<h3 style="font-size: 16px; font-weight: 600;">Control Deck Locked</h3>
+				<p style="font-size: 12px; color: var(--muted); margin-top: 4px;">Enter master password to manage host AI engines.</p>
+			</div>
+			<input type="password" id="unlockPw" placeholder="Master Password" onkeydown="if(event.key==='Enter') unlockDeck()" />
+			<button class="btn btn-primary" style="width:100%; height:36px;" onclick="unlockDeck()">Unlock Deck</button>
+			<div class="mono" id="unlockErr" style="font-size: 11px; color: var(--err);"></div>
+		</div>
+	</div>
+
+	<footer>
+		codeout &bull; self-hosted AI coding agents in your pocket &bull; <a href="https://codeout.dev/docs" target="_blank">Documentation</a>
+	</footer>
+
+	<script>
+		let config = null;
+		let currentPairData = null;
+		let adminPassword = sessionStorage.getItem('codeout-admin-pw') || '';
+		const token = new URLSearchParams(window.location.search).get('token') || localStorage.getItem('codeout-owner-token') || '';
+		if (token) localStorage.setItem('codeout-owner-token', token);
+
+		// Section Collapse Handlers
+		function toggleSection(secId) {
+			const sec = document.getElementById(secId);
+			if (!sec) return;
+			const isCollapsed = sec.classList.toggle('collapsed');
+			localStorage.setItem('codeout-collapse-' + secId, isCollapsed ? '1' : '0');
+		}
+
+		function restoreSectionStates() {
+			['sec-providers', 'sec-pairing', 'sec-devices'].forEach(id => {
+				const isCollapsed = localStorage.getItem('codeout-collapse-' + id) === '1';
+				const sec = document.getElementById(id);
+				if (sec && isCollapsed) sec.classList.add('collapsed');
+			});
+		}
+
+		const MODEL_LABELS = {
+			'claude-3-7-sonnet': 'Claude 3.7 Sonnet (Hybrid / Thinking)',
+			'claude-3-5-sonnet': 'Claude 3.5 Sonnet',
+			'claude-3-5-haiku': 'Claude 3.5 Haiku (Fast)',
+			'claude-3-opus': 'Claude 3 Opus',
+			'o3-mini': 'o3-mini (Reasoning)',
+			'gpt-4o': 'GPT-4o (Omni)',
+			'o1': 'o1 (Deep Reasoning)',
+			'gpt-4.5-preview': 'GPT-4.5 Preview',
+			'gemini-3.8-flash': 'Gemini 3.8 Flash (Latest / Fast)',
+			'gemini-3.7-flash': 'Gemini 3.7 Flash (Reasoning)',
+			'gemini-3.6-flash': 'Gemini 3.6 Flash',
+			'gemini-3.1-pro': 'Gemini 3.1 Pro (Deep Architect)',
+			'claude-sonnet-4-6': 'Claude Sonnet 4.6 (Antigravity Thinking)',
+			'claude-opus-4-6-thinking': 'Claude Opus 4.6 (Antigravity Thinking)',
+			'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)',
+			'deepseek/deepseek-r1': 'DeepSeek R1 (Open Reasoning)',
+			'deepseek/deepseek-chat': 'DeepSeek V3 (Fast / Cheap)',
+			'anthropic/claude-3.7-sonnet': 'Claude 3.7 Sonnet (OpenRouter)',
+			'meta-llama/llama-3.3-70b-instruct': 'Llama 3.3 70B (Open Source)',
+			'qwen/qwen-2.5-coder-32b-instruct': 'Qwen 2.5 Coder 32B (Code Specialist)',
+			'google/gemini-2.5-pro': 'Gemini 2.5 Pro (Direct / Multimodal)'
+		};
+
+		const PROVIDER_INFO = {
+			claude: {
+				name: 'Claude Code',
+				desc: 'Anthropic coding agent (Claude 3.7 Sonnet, Haiku 3.5, Opus 3)',
+				icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><circle cx="12" cy="12" r="3"/></svg>`
+			},
+			codex: {
+				name: 'OpenAI Codex',
+				desc: 'OpenAI agent engine (o3-mini, GPT-4o, o1)',
+				icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>`
+			},
+			gemini: {
+				name: 'Gemini (Antigravity)',
+				desc: 'Google Antigravity agent (Gemini 3.8 / 3.7 / 3.1 Pro via agy)',
+				icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3z"/></svg>`
+			},
+			openrouter: {
+				name: 'OpenRouter',
+				desc: '300+ AI models via unified API (DeepSeek R1/V3, Llama 3.3, Qwen Coder, Claude, Gemini)',
+				icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>`
+			}
+		};
+
+		function esc(s) {
+			if (s == null) return '';
+			return String(s)
+				.replace(/&/g, '&amp;')
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;')
+				.replace(/"/g, '&quot;')
+				.replace(/'/g, '&#39;');
+		}
+
+		function getHeaders() {
+			const h = { 'content-type': 'application/json' };
+			if (adminPassword) h['x-admin-password'] = adminPassword;
+			if (token) h['authorization'] = 'Bearer ' + token;
+			return h;
+		}
+
+		async function loadData() {
+			try {
+				const r = await fetch('/api/config', { headers: getHeaders() });
+				if (r.status === 401) {
+					const body = await r.json().catch(() => ({}));
+					if (body.hasPassword) {
+						document.getElementById('lockOverlay').style.display = 'grid';
+						return;
+					}
+				}
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				document.getElementById('lockOverlay').style.display = 'none';
+				const data = await r.json();
+				config = data.config;
+				renderProviders();
+				document.getElementById('serverEndpoint').textContent = window.location.host;
+
+				const hasPw = Boolean(config.server.hasPassword);
+				const pwBadge = document.getElementById('passwordBadge');
+				const pwStatus = document.getElementById('passwordCardStatus');
+				const lockBtn = document.getElementById('lockDeckBtn');
+				const removeBtn = document.getElementById('removePwBtn');
+
+				if (hasPw) {
+					pwBadge.className = 'badge badge-ok';
+					pwBadge.textContent = 'Protected';
+					pwStatus.textContent = 'Protected with master password. Local and remote access challenged.';
+					lockBtn.style.display = 'inline-flex';
+					removeBtn.style.display = 'inline-flex';
+				} else {
+					pwBadge.className = 'badge badge-muted';
+					pwBadge.textContent = 'Unprotected';
+					pwStatus.textContent = 'No password configured. Open on local network and Tailscale.';
+					lockBtn.style.display = 'none';
+					removeBtn.style.display = 'none';
+				}
+			} catch (e) {
+				document.getElementById('providersGrid').innerHTML = `<div class="card" style="grid-column: 1/-1; color: var(--err)">Failed to load configuration: ${esc(e.message)}</div>`;
+			}
+		}
+
+		function renderProviders() {
+			const grid = document.getElementById('providersGrid');
+			grid.innerHTML = '';
+
+			let enabledCount = 0;
+			const totalCount = Object.keys(config.agents).length;
+
+			for (const [id, agent] of Object.entries(config.agents)) {
+				if (agent.enabled) enabledCount++;
+				const info = PROVIDER_INFO[id] || { name: id, desc: '', icon: '' };
+				const card = document.createElement('div');
+				card.className = 'card';
+				card.id = `card-${esc(id)}`;
+
+				const isApiKey = agent.authMode === 'apiKey';
+				const isInstalled = agent.installed;
+
+				card.innerHTML = `
+					<div class="card-header">
+						<div class="agent-lead">
+							<div class="agent-icon">${info.icon}</div>
+							<div>
+								<div class="agent-name">
+									<span>${esc(info.name)}</span>
+									${isInstalled ? `<span class="badge badge-ok tabular">v${esc(agent.version || 'installed')}</span>` : `<span class="badge badge-err">CLI Missing</span>`}
+								</div>
+								<div class="agent-desc">${esc(info.desc)}</div>
+							</div>
+						</div>
+
+						<label class="toggle-switch">
+							<input type="checkbox" ${agent.enabled ? 'checked' : ''} onchange="toggleAgent('${esc(id)}', this.checked)" />
+							<div class="toggle-track"><div class="toggle-thumb"></div></div>
+						</label>
+					</div>
+
+					<div class="input-group">
+						<div class="input-label">
+							<span>Authentication</span>
+						</div>
+						<div class="mode-pill-group">
+							<button type="button" class="mode-pill ${!isApiKey ? 'active' : ''}" onclick="setAuthMode('${esc(id)}', 'subscription')">Subscription / OAuth</button>
+							<button type="button" class="mode-pill ${isApiKey ? 'active pink' : ''}" onclick="setAuthMode('${esc(id)}', 'apiKey')">Direct API Key</button>
+						</div>
+					</div>
+
+					${isApiKey ? `
+						<div class="input-group">
+							<div class="input-label">
+								<span>API Key</span>
+								<span class="mono" style="font-size:10px; color:${agent.hasApiKey ? 'var(--ok)' : 'var(--err)'}">
+									${esc(agent.hasApiKey ? agent.apiKeyMasked : 'No key configured')}
+								</span>
+							</div>
+							<div class="input-row">
+								<input type="password" id="input-key-${esc(id)}" placeholder="${agent.hasApiKey ? 'Enter new key to replace' : 'sk-...'}" />
+								<button type="button" class="btn btn-primary" onclick="saveKey('${esc(id)}')">Save</button>
+							</div>
+						</div>
+					` : `
+						<div style="font-size:11.5px; color:var(--muted); background:var(--bg); border:1px solid var(--border-soft); padding:8px 12px; border-radius:6px;">
+							Uses the host CLI login (~/.${esc(id === 'claude' ? 'claude.json' : id === 'codex' ? 'codex' : 'gemini')}). Zero API token charges.
+						</div>
+					`}
+
+					${agent.allowedModels && agent.allowedModels.length ? `
+						<div class="input-group">
+							<div class="input-label"><span>Default Model</span></div>
+							<select onchange="saveModel('${esc(id)}', this.value)">
+								${agent.allowedModels.map(m => `<option value="${esc(m)}" ${m === agent.defaultModel ? 'selected' : ''}>${esc(MODEL_LABELS[m] || m)}</option>`).join('')}
+							</select>
+						</div>
+					` : ''}
+
+					<div class="card-footer">
+						<button type="button" class="btn btn-ghost" id="test-btn-${esc(id)}" onclick="runTest('${esc(id)}')">
+							<span>Test Connection</span>
+						</button>
+						<div class="result-readout" id="test-res-${esc(id)}"></div>
+					</div>
+				`;
+				grid.appendChild(card);
+			}
+
+			const badge = document.getElementById('activeAgentsBadge');
+			if (badge) badge.textContent = `${enabledCount} of ${totalCount} Active`;
+		}
+
+		async function patchAgent(id, patch) {
+			try {
+				const r = await fetch(`/api/config/agents/${encodeURIComponent(id)}`, {
+					method: 'POST',
+					headers: getHeaders(),
+					body: JSON.stringify(patch)
+				});
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				await loadData();
+			} catch (e) {
+				alert('Update failed: ' + e.message);
+			}
+		}
+
+		function toggleAgent(id, enabled) { patchAgent(id, { enabled }); }
+		function setAuthMode(id, authMode) { patchAgent(id, { authMode }); }
+		function saveModel(id, defaultModel) { patchAgent(id, { defaultModel }); }
+		function saveKey(id) {
+			const input = document.getElementById(`input-key-${id}`);
+			if (!input || !input.value.trim()) return;
+			patchAgent(id, { apiKey: input.value.trim() });
+		}
+
+		async function runTest(id) {
+			const btn = document.getElementById(`test-btn-${id}`);
+			const res = document.getElementById(`test-res-${id}`);
+			btn.disabled = true;
+			btn.innerHTML = `<div class="spinner"></div><span>Testing...</span>`;
+			res.innerHTML = '';
+
+			try {
+				const r = await fetch(`/api/config/agents/${encodeURIComponent(id)}/test`, {
+					method: 'POST',
+					headers: getHeaders()
+				});
+				const data = await r.json();
+				if (data.ok) {
+					res.innerHTML = `<span style="color:var(--ok)">✓ Connected (${esc(data.latencyMs)}ms)</span>`;
+				} else {
+					res.innerHTML = `<span style="color:var(--err)" title="${esc(data.error)}">✗ ${esc(data.error || 'Failed')}</span>`;
+				}
+			} catch (e) {
+				res.innerHTML = `<span style="color:var(--err)">✗ Error: ${esc(e.message)}</span>`;
+			} finally {
+				btn.disabled = false;
+				btn.innerHTML = `<span>Test Connection</span>`;
+			}
+		}
+
+		async function fetchPairCode() {
+			const qrFrame = document.getElementById('qrFrame');
+			qrFrame.innerHTML = `<div class="spinner"></div>`;
+			try {
+				const r = await fetch('/api/pair/code', { headers: getHeaders() });
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				const data = await r.json();
+				currentPairData = data;
+				document.getElementById('pairCodeText').textContent = data.display || data.code;
+				document.getElementById('fpText').textContent = data.fingerprint || 'OK';
+				if (data.qrDataUrl) {
+					qrFrame.innerHTML = `<img src="${data.qrDataUrl}" alt="Pairing QR Code" />`;
+				} else {
+					qrFrame.innerHTML = `<div style="font-size:10px; color:#000;">Scan in App</div>`;
+				}
+			} catch (e) {
+				document.getElementById('pairCodeText').textContent = 'Error';
+				qrFrame.innerHTML = `<div style="font-size:10px; color:var(--err);">Failed</div>`;
+			}
+		}
+
+		function copyPairCode() {
+			if (!currentPairData || !currentPairData.display) return;
+			navigator.clipboard.writeText(currentPairData.display).then(() => {
+				const btn = document.getElementById('copyBtnText');
+				btn.textContent = 'Copied!';
+				setTimeout(() => { btn.textContent = 'Copy Code'; }, 2000);
+			});
+		}
+
+		async function loadDevices() {
+			const body = document.getElementById('devicesTableBody');
+			try {
+				const r = await fetch('/api/devices', { headers: getHeaders() });
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				const data = await r.json();
+				const list = data.devices || [];
+				const badge = document.getElementById('pairedDevicesBadge');
+				if (badge) badge.textContent = `${list.length} Paired`;
+				if (!list.length) {
+					body.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--muted); padding: 24px;">No paired devices yet. Scan the QR code to pair your first device.</td></tr>`;
+					return;
+				}
+				body.innerHTML = list.map(d => `
+					<tr>
+						<td>
+							<div style="font-weight:600; display:flex; align-items:center; gap:6px;">
+								<span>${esc(d.name || 'Unnamed Device')}</span>
+								${d.current ? `<span class="badge badge-pink">This Browser</span>` : ''}
+							</div>
+						</td>
+						<td><code class="mono" style="color:var(--muted); font-size:11px;">${esc(d.id)}</code></td>
+						<td class="tabular" style="color:var(--muted); font-size:11.5px;">${d.paired ? esc(new Date(d.paired).toLocaleDateString() + ' ' + new Date(d.paired).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})) : 'Unknown'}</td>
+						<td style="text-align: right;">
+							<button class="btn btn-danger" style="height:24px; padding:0 8px; font-size:10.5px;" onclick="revokeDevice('${esc(d.id)}')">Revoke</button>
+						</td>
+					</tr>
+				`).join('');
+			} catch (e) {
+				body.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--err); padding: 24px;">Failed to load devices: ${esc(e.message)}</td></tr>`;
+			}
+		}
+
+		async function revokeDevice(id) {
+			if (!confirm('Revoke this device? It will be disconnected immediately.')) return;
+			try {
+				const r = await fetch(`/api/devices/${encodeURIComponent(id)}`, {
+					method: 'DELETE',
+					headers: getHeaders()
+				});
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				await loadDevices();
+			} catch (e) {
+				alert('Failed to revoke device: ' + e.message);
+			}
+		}
+
+		async function setMasterPassword() {
+			const p1 = document.getElementById('pwInput').value;
+			const p2 = document.getElementById('pwConfirm').value;
+			const st = document.getElementById('pwStatusText');
+			if (!p1) { st.innerHTML = '<span style="color:var(--err)">Password required</span>'; return; }
+			if (p1 !== p2) { st.innerHTML = '<span style="color:var(--err)">Passwords do not match</span>'; return; }
+
+			try {
+				const r = await fetch('/api/config/password', {
+					method: 'POST',
+					headers: getHeaders(),
+					body: JSON.stringify({ password: p1 })
+				});
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				st.innerHTML = '<span style="color:var(--ok)">✓ Master password saved</span>';
+				adminPassword = p1;
+				sessionStorage.setItem('codeout-admin-pw', p1);
+				document.getElementById('pwInput').value = '';
+				document.getElementById('pwConfirm').value = '';
+				await loadData();
+			} catch (e) {
+				st.innerHTML = `<span style="color:var(--err)">Error: ${esc(e.message)}</span>`;
+			}
+		}
+
+		async function removeMasterPassword() {
+			if (!confirm('Disable password protection for this control deck?')) return;
+			const st = document.getElementById('pwStatusText');
+			try {
+				const r = await fetch('/api/config/password', {
+					method: 'POST',
+					headers: getHeaders(),
+					body: JSON.stringify({ password: null })
+				});
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				adminPassword = '';
+				sessionStorage.removeItem('codeout-admin-pw');
+				st.innerHTML = '<span style="color:var(--ok)">✓ Password protection disabled</span>';
+				await loadData();
+			} catch (e) {
+				st.innerHTML = `<span style="color:var(--err)">Error: ${esc(e.message)}</span>`;
+			}
+		}
+
+		function lockDeckNow() {
+			adminPassword = '';
+			sessionStorage.removeItem('codeout-admin-pw');
+			document.getElementById('lockOverlay').style.display = 'grid';
+			document.getElementById('unlockPw').value = '';
+			document.getElementById('unlockErr').textContent = '';
+			document.getElementById('unlockPw').focus();
+		}
+
+		async function unlockDeck() {
+			const pw = document.getElementById('unlockPw').value;
+			const err = document.getElementById('unlockErr');
+			err.textContent = '';
+			if (!pw) return;
+
+			try {
+				const r = await fetch('/api/config/password/verify', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ password: pw })
+				});
+				const data = await r.json();
+				if (data.ok) {
+					adminPassword = pw;
+					sessionStorage.setItem('codeout-admin-pw', pw);
+					document.getElementById('lockOverlay').style.display = 'none';
+					await loadData();
+					fetchPairCode();
+					loadDevices();
+				} else {
+					err.textContent = 'Incorrect password';
+				}
+			} catch (e) {
+				err.textContent = 'Verification error: ' + e.message;
+			}
+		}
+
+		restoreSectionStates();
+		loadData();
+		fetchPairCode();
+		loadDevices();
+	</script>
+</body>
+</html>

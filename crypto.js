@@ -9,7 +9,7 @@ import sodium from 'libsodium-wrappers';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, randomBytes } from 'node:crypto';
 
 const CODEOUT_HOME = process.env.CODEOUT_HOME || join(homedir(), '.codeout');
 const ID_FILE = join(CODEOUT_HOME, 'identity.json');
@@ -19,7 +19,7 @@ const DEVICES_FILE = join(CODEOUT_HOME, 'devices.json');
  *  truncated JSON that the loader then reads as empty — which would silently drop every
  *  paired device or token. rename() is atomic on the same filesystem. */
 function writeAtomic(path, data, mode) {
-	const tmp = `${path}.tmp`;
+	const tmp = `${path}.${randomBytes(6).toString('hex')}.tmp`;
 	writeFileSync(tmp, data, { mode });
 	renameSync(tmp, path);
 }

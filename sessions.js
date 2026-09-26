@@ -5,23 +5,25 @@
 // (They do NOT survive a node-server restart - by design; that's fine.)
 import platform from './platform/index.js';
 import Busboy from 'busboy';
+import QRCode from 'qrcode';
 import { homedir } from 'node:os';
 import { basename, join, resolve as resolvePath, isAbsolute, sep, extname } from 'node:path';
-import { existsSync, mkdirSync, createWriteStream, writeFileSync, readFileSync, unlinkSync, readdirSync, statSync, createReadStream, accessSync, realpathSync, rmSync, renameSync, constants as FS } from 'node:fs';
-import { apiTokenOk, apiAuthOk, originOk, bearerToken } from './auth.js';
+import { existsSync, mkdirSync, createWriteStream, writeFileSync, readFileSync, unlinkSync, readdirSync, statSync, createReadStream, accessSync, realpathSync, rmSync, renameSync, copyFileSync, constants as FS } from 'node:fs';
+import { apiTokenOk, apiAuthOk, originOk, bearerToken, isLocalRequest, isLoopbackRequest, isTunnelRequest } from './auth.js';
 import { initCrypto, mintPairCode, consumePairCode, registerDevice, mintDeviceToken, daemonPublicKeyB64, formatPairCode, daemonFingerprint, listDevices, deviceIdForToken, revokeDevice, updateDevice, isValidColour, isValidAvatar, setDevicePush, clearDevicePush, pushTargets } from './crypto.js';
 import { sendPush, apnsEnabled } from './apns.js';
 import { closeDeviceConnections } from './pty-bridge.js';
 import { PersistentChatLog, evId } from './chat-events.js';
 import { startClaudeChat } from './claude-chat.js';
 import { startCodexChat } from './codex-chat.js';
-import { startGeminiChat } from './gemini-chat.js';
+import { startGeminiChat, resolveGeminiModel } from './gemini-chat.js';
+import { startOpenRouterChat } from './openrouter-chat.js';
 import { detectAgents, testAgentConnection } from './agents.js';
 import { getAdminConfig, updateAgentConfig, getAgentAuth, getClientAgentsList, setMasterPassword, checkMasterPassword, hasMasterPassword } from './config.js';
 // Chat backend dispatch: agent name → the module that normalizes it to ChatEvents. All take the
 // SAME opts; the host (wireChat/relaunchBackend) is agent-agnostic.
-const CHAT_BACKENDS = { claude: startClaudeChat, codex: startCodexChat, gemini: startGeminiChat, agy: startGeminiChat };
-import { archiveMove, listArchives, readArchiveMeta, deleteArchive, summarize } from './archive.js';
+const CHAT_BACKENDS = { claude: startClaudeChat, codex: startCodexChat, gemini: startGeminiChat, agy: startGeminiChat, openrouter: startOpenRouterChat };
+import { archiveMove, listArchives, readArchiveMeta, deleteArchive, chatFilePath, uploadsDirPath } from './archive.js';
 
 const MAX_BUFFER = 256 * 1024; // recent output replayed on reattach (for redraw)
 const MAX_UPLOAD = Number(process.env.COCKPIT_MAX_UPLOAD) || 100 * 1024 * 1024; // 100 MB/file cap
@@ -131,8 +133,8 @@ function acquireDaemonLock() {
 	}
 }
 
-// Root the "+" menu discovers project folders under (override with COCKPIT_ROOT).
-const ROOT = process.env.COCKPIT_ROOT || join(homedir(), 'core');
+// Root the "+" menu discovers project folders under (override with CODEOUT_ROOT or COCKPIT_ROOT).
+const ROOT = process.env.CODEOUT_ROOT || process.env.COCKPIT_ROOT || (existsSync(join(homedir(), 'core')) ? join(homedir(), 'core') : (existsSync('/home/law/core') ? '/home/law/core' : join(homedir(), 'core')));
 
 // ---- Upload directory (server-side, shared across all devices) ----
 // WHERE uploaded files land on the SERVER is a daemon concern, not a per-device one, so it's
@@ -327,7 +329,7 @@ function persist() {
 // resolves the agent CLI; agents drop back to a shell on exit (`exec bash`), so the tab
 // survives quitting the agent.
 // 'agy' / 'gemini' = Antigravity / Gemini agent (AI Pro subscription via agy stream-json).
-const AGENTS = new Set(['bash', 'claude', 'codex', 'gemini', 'agy']);
+const AGENTS = new Set(['bash', 'claude', 'codex', 'gemini', 'agy', 'openrouter']);
 
 // A new session may only start in ROOT or one of the curated project folders
 // (exactly what the picker offers) - never an arbitrary path like /etc or /root.
@@ -421,22 +423,24 @@ function wireChat(s, fresh) {
 
 	const env = childEnv();
 	const onResume = (id) => { s.resumeId = id; persist(); };
-	// Daemon-curated built-in commands that DO work headless (handled daemon-side, not by the
-	// agent). TUI-only built-ins (/compact, /agents, /help …) are intentionally omitted - they
-	// have no headless behaviour. Clients merge these with the agent's plugin `commands`.
-	const BUILTIN_COMMANDS = [
-		{ name: 'model', description: 'Switch model' },
-		{ name: 'effort', description: 'low|medium|high|xhigh|max' },
-		{ name: 'mode', description: 'default|acceptEdits|plan|bypassPermissions' },
-		{ name: 'clear', description: 'Start a fresh chat' }
-	];
+	const getBuiltinsForAgent = () => {
+		const auth = getAgentAuth(s.agent);
+		const allowedModels = auth.allowedModels || [];
+		const efforts = auth.efforts || ['low', 'medium', 'high'];
+		return [
+			{ name: 'model', description: 'Switch model', options: allowedModels },
+			{ name: 'effort', description: efforts.join('|'), options: efforts },
+			{ name: 'mode', description: 'default|acceptEdits|plan|bypassPermissions', options: ['default', 'acceptEdits', 'plan', 'bypassPermissions'] },
+			{ name: 'clear', description: 'Start a fresh chat' }
+		];
+	};
 	// init carries the agent's slash-command list; relay it once so clients can offer a
 	// `/` autocomplete. Re-emitted on a backend relaunch (e.g. /model) - same event, new seq.
 	// `commands` is the agent's plugin/skill list; `builtins` is the daemon's curated list.
 	const onSlashCommands = (commands) => {
 		if (!Array.isArray(commands)) return;
 		s.slashCommands = commands;
-		emit({ t: 'slash-commands', commands, builtins: BUILTIN_COMMANDS });
+		emit({ t: 'slash-commands', commands, builtins: getBuiltinsForAgent() });
 	};
 
 	// ----- stats / status-bar meta -----
@@ -676,27 +680,38 @@ function wireChat(s, fresh) {
 
 	const makeBackend = CHAT_BACKENDS[s.agent];
 	if (makeBackend) {
-		const auth = getAgentAuth(s.agent);
-		const sessionEnv = { ...env };
-		if (auth.authMode === 'apiKey' && auth.apiKey) {
-			if (s.agent === 'claude') sessionEnv.ANTHROPIC_API_KEY = auth.apiKey;
-			else if (s.agent === 'codex') sessionEnv.OPENAI_API_KEY = auth.apiKey;
-			else if (s.agent === 'gemini' || s.agent === 'agy') sessionEnv.GEMINI_API_KEY = auth.apiKey;
-		}
-		if (!s.model && auth.defaultModel) s.model = auth.defaultModel;
-
 		// Launch (or relaunch) this agent's chat backend. `/model` etc. tear the child down and
 		// call this again with the new flags + the captured resumeId (session_id / threadId), so
 		// the conversation continues with the setting swapped. The SAME opts feed every backend —
-		// Claude, Codex (and later Gemini) all normalize to ChatEvents.
-		s.startBackend = () => makeBackend({
-			cwd: s.cwd, env: sessionEnv, resumeId: s.resumeId || null, model: s.model || null, effort: s.effort || null,
-			permissionMode: s.permissionMode || DEFAULT_PERMISSION_MODE,
-			// A session reopened from the archive carries the previous conversation's
-			// summary — appended to the system prompt so the agent starts with context.
-			extraSystemPrompt: s.seedSummary || null, emit,
-			onSessionId: onResume, onSlashCommands, onMeta, onPermission
-		});
+		// Claude, Codex, and Gemini all normalize to ChatEvents.
+		s.startBackend = () => {
+			const auth = getAgentAuth(s.agent);
+			const sessionEnv = { ...env };
+			if (auth.authMode === 'apiKey' && auth.apiKey) {
+				if (s.agent === 'claude') sessionEnv.ANTHROPIC_API_KEY = auth.apiKey;
+				else if (s.agent === 'codex') sessionEnv.OPENAI_API_KEY = auth.apiKey;
+				else if (s.agent === 'gemini' || s.agent === 'agy') sessionEnv.GEMINI_API_KEY = auth.apiKey;
+				else if (s.agent === 'openrouter') {
+					sessionEnv.OPENROUTER_API_KEY = auth.apiKey;
+					if (auth.baseUrl) sessionEnv.OPENROUTER_BASE_URL = auth.baseUrl;
+				}
+			}
+			if (!s.model && auth.defaultModel) s.model = auth.defaultModel;
+			if (s.agent === 'gemini' || s.agent === 'agy') {
+				const res = resolveGeminiModel(s.model, s.effort);
+				s.model = res.model;
+				if (res.effort) s.effort = res.effort;
+			}
+
+			return makeBackend({
+				cwd: s.cwd, env: sessionEnv, resumeId: s.resumeId || null, model: s.model || null, effort: s.effort || null,
+				permissionMode: s.permissionMode || DEFAULT_PERMISSION_MODE,
+				// A session reopened from the archive carries the previous conversation's
+				// summary — appended to the system prompt so the agent starts with context.
+				extraSystemPrompt: s.seedSummary || null, emit,
+				onSessionId: onResume, onSlashCommands, onMeta, onPermission
+			});
+		};
 		s.backend = s.startBackend();
 	} else {
 		// chatMode only makes sense for a supported LLM agent; fall back to an error event.
@@ -721,8 +736,24 @@ function wireChat(s, fresh) {
 	//      one. resetHistory drops the resume id + scrollback so the relaunch is a fresh chat.
 	const relaunchBackend = ({ model, effort, permissionMode, resetHistory } = {}) => {
 		if (!s.startBackend) return false;
-		if (model !== undefined) s.model = model;
-		if (effort !== undefined) s.effort = effort;
+		if (model !== undefined) {
+			if (s.agent === 'gemini' || s.agent === 'agy') {
+				const res = resolveGeminiModel(model, effort !== undefined ? effort : s.effort);
+				s.model = res.model;
+				if (res.effort) s.effort = res.effort;
+			} else {
+				s.model = model;
+			}
+		}
+		if (effort !== undefined) {
+			if (s.agent === 'gemini' || s.agent === 'agy') {
+				const res = resolveGeminiModel(s.model, effort);
+				s.model = res.model;
+				if (res.effort) s.effort = res.effort;
+			} else {
+				s.effort = effort;
+			}
+		}
 		if (permissionMode !== undefined) s.permissionMode = permissionMode;
 		if (resetHistory) {
 			// Forget the resume id so the relaunch is a brand-new claude session, and clear the
@@ -768,17 +799,28 @@ function wireChat(s, fresh) {
 		// Echo the command as a user bubble so the transcript shows what was asked.
 		emit({ t: 'user', id: evId(), text: `/model ${model}`.trim(), senderId, senderName });
 		if (!model) {
-			emit({ t: 'system', text: s.model ? `Current model: ${s.model}. Use /model <name> to switch.` : 'Using the default model. Use /model <name> to switch.' });
+			const auth = getAgentAuth(s.agent);
+			const allowed = auth.allowedModels || [];
+			const current = s.model ? `Current model: **${s.model}**.` : 'Using default model.';
+			let text = `${current} Choose a model to switch:`;
+			if (allowed.length > 0) {
+				text += '\n<options>\n' + allowed.map(m => `<option value="/model ${m}">${m}</option>`).join('\n') + '\n</options>';
+			} else {
+				text += ' Use `/model <name>` to switch.';
+			}
+			emit({ t: 'system', text });
 			return;
 		}
 		if (turnLive) { queueControl({ model }, `Model → ${model}`); return; }
 		if (!relaunchBackend({ model })) {
-			emit({ t: 'error', message: '/model is only available for claude chat sessions.' });
+			emit({ t: 'error', message: `/model is not available for ${s.agent} chat sessions.` });
 			return;
 		}
-		emit({ t: 'system', text: `Model switched to ${model}.` });
+		const display = (s.agent === 'gemini' || s.agent === 'agy') && s.effort ? `${s.model} (${s.effort})` : (s.model || model);
+		emit({ t: 'system', text: `Model switched to ${display}.` });
 		// Reflect the new model in the status bar (init will also confirm it shortly).
-		if (s._statsModel) s._statsModel(model);
+		if (s._statsModel) s._statsModel(s.model || model);
+		if (s._statsEffort && s.effort) s._statsEffort(s.effort);
 		if (s._emitStats) s._emitStats(true);
 	};
 
@@ -791,7 +833,16 @@ function wireChat(s, fresh) {
 		const effort = String(level || '').trim().toLowerCase();
 		emit({ t: 'user', id: evId(), text: `/effort ${effort}`.trim(), senderId, senderName });
 		if (!effort) {
-			emit({ t: 'system', text: s.effort ? `Current effort: ${s.effort}. Use /effort <low|medium|high|xhigh|max> to change.` : 'Using the default effort. Use /effort <low|medium|high|xhigh|max> to change.' });
+			const auth = getAgentAuth(s.agent);
+			const efforts = auth.efforts || ['low', 'medium', 'high'];
+			const current = s.effort ? `Current effort: **${s.effort}**.` : 'Using default effort.';
+			let text = `${current} Choose reasoning effort:`;
+			if (efforts.length > 0) {
+				text += '\n<options>\n' + efforts.map(e => `<option value="/effort ${e}">${e}</option>`).join('\n') + '\n</options>';
+			} else {
+				text += ' Use `/effort <low|medium|high>` to change.';
+			}
+			emit({ t: 'system', text });
 			return;
 		}
 		if (!EFFORT_LEVELS.has(effort)) {
@@ -800,7 +851,7 @@ function wireChat(s, fresh) {
 		}
 		if (turnLive) { queueControl({ effort }, `Effort → ${effort}`); return; }
 		if (!relaunchBackend({ effort })) {
-			emit({ t: 'error', message: '/effort is only available for claude chat sessions.' });
+			emit({ t: 'error', message: `/effort is not available for ${s.agent} chat sessions.` });
 			return;
 		}
 		emit({ t: 'system', text: `Effort → ${effort}.` });
@@ -817,7 +868,11 @@ function wireChat(s, fresh) {
 		emit({ t: 'user', id: evId(), text: `/mode ${mode}`.trim(), senderId, senderName });
 		const cur = s.permissionMode || DEFAULT_PERMISSION_MODE;
 		if (!mode) {
-			emit({ t: 'system', text: `Current permission mode: ${cur}. Use /mode <default|acceptEdits|plan|bypassPermissions> to change.` });
+			const modes = ['default', 'acceptEdits', 'plan', 'bypassPermissions'];
+			const text = `Current permission mode: **${cur}**. Choose permission mode:\n<options>\n` +
+				modes.map(m => `<option value="/mode ${m}">${m}</option>`).join('\n') +
+				'\n</options>';
+			emit({ t: 'system', text });
 			return;
 		}
 		if (!validatePermissionMode(mode)) {
@@ -826,7 +881,7 @@ function wireChat(s, fresh) {
 		}
 		if (turnLive) { queueControl({ permissionMode: mode }, `Permission mode → ${mode}`); return; }
 		if (!relaunchBackend({ permissionMode: mode })) {
-			emit({ t: 'error', message: '/mode is only available for claude chat sessions.' });
+			emit({ t: 'error', message: `/mode is not available for ${s.agent} chat sessions.` });
 			return;
 		}
 		emit({ t: 'system', text: `Permission mode → ${mode}.` });
@@ -1119,9 +1174,23 @@ export function create(cwd = ROOT, agent = 'bash', chatMode = false, creatorId =
 	const permMode = validatePermissionMode(permissionMode) || readDefaultPermissionMode();
 	/** @type {Session} */
 	const s = { id, cwd, agent: a, name: name || (chatMode ? 'Chat' : 'Terminal'), avatar: null, socket: join(SOCKET_DIR, id), created: Date.now(), pty: null, buffer: [], clients: new Set(), chatMode: !!chatMode, permissionMode: permMode, owner: creatorId };
-	// Archive-reopen seeding — set BEFORE wire() so the first backend launch carries it:
-	// seedSummary rides --append-system-prompt; resumeId makes it a native full resume.
-	if (chatMode && typeof opts.seedSummary === 'string' && opts.seedSummary) s.seedSummary = opts.seedSummary;
+
+	// Archive unarchive / transcript restoration:
+	// If reopening from an archive, restore its chat log and uploads to the new session's path before wiring:
+	if (chatMode && opts.chatLogSource && existsSync(opts.chatLogSource)) {
+		mkdirSync(CHAT_LOG_DIR, { recursive: true, mode: 0o700 });
+		copyFileSync(opts.chatLogSource, join(CHAT_LOG_DIR, `${id}.jsonl`));
+	}
+	if (chatMode && opts.uploadsSource && existsSync(opts.uploadsSource)) {
+		const destUp = join(uploadsDir(), id);
+		mkdirSync(destUp, { recursive: true, mode: 0o700 });
+		try {
+			for (const file of readdirSync(opts.uploadsSource)) {
+				copyFileSync(join(opts.uploadsSource, file), join(destUp, file));
+			}
+		} catch { /* best-effort */ }
+	}
+
 	if (chatMode && typeof opts.resumeId === 'string' && opts.resumeId) s.resumeId = opts.resumeId;
 	if (chatMode && typeof opts.model === 'string' && opts.model) s.model = opts.model;
 	if (chatMode && typeof opts.effort === 'string' && opts.effort) s.effort = opts.effort;
@@ -1214,8 +1283,7 @@ export function kill(id) {
 
 /**
  * Archive a CHAT session: same teardown as kill() but the transcript survives.
- * The chat log + uploads move to ~/.codeout/archive/<id>/ with a meta record, and a
- * summary is generated async (fire-and-forget; reopen retries a still-pending one).
+ * The chat log + uploads move to ~/.codeout/archive/<id>/ with a meta record.
  * Terminal sessions can't archive (no transcript) — callers keep kill() for those.
  * @returns {object|null} the archive meta, or null (unknown id / not a chat session)
  */
@@ -1236,25 +1304,17 @@ export function archiveSession(id) {
 		{ id: s.id, name: s.name, avatar: s.avatar, cwd: s.cwd, agent: s.agent, model: s.model ?? null, effort: s.effort ?? null, permissionMode: s.permissionMode ?? null, created: s.created, resumeId: s.resumeId ?? null },
 		{ chatLogFile: join(CHAT_LOG_DIR, `${s.id}.jsonl`), uploadsPath: join(uploadsDir(), s.id) }
 	);
-	// Summarize in the background — archive returns immediately, the meta fills in.
-	void summarize(id, { env: childEnv() }).catch(() => { /* stays pending; reopen retries */ });
 	return meta;
 }
 
 /**
- * Reopen an archived chat as a FRESH session seeded with its summary (default), or as
- * a native full resume when mode==='resume' and the resumeId survived. The old
- * transcript stays in the archive (viewable/exportable) — it is NOT replayed into the
- * new session's log.
+ * Reopen an archived chat: restores the full past conversation history and uploads
+ * directly into a new session. If native resumeId exists, links session resumption.
  * @returns {Promise<object>} the create() result for the new session
  */
-// Archive ids currently being reopened — an idempotency lock. Reopen awaits a summary that
-// can take up to the summarizer's timeout, so a double-tap, two paired devices, or a client
-// timeout-retry could otherwise pass the readArchiveMeta check twice and create TWO live
-// sessions from one archive. The guard collapses those to one.
 const reopeningArchives = new Set();
 
-export async function reopenArchive(id, creatorId = 'owner', mode = 'summary') {
+export async function reopenArchive(id, creatorId = 'owner') {
 	const meta = readArchiveMeta(id);
 	if (!meta) throw new Error('archive not found');
 	if (!existsSync(meta.cwd)) throw new Error('the original folder no longer exists');
@@ -1262,31 +1322,32 @@ export async function reopenArchive(id, creatorId = 'owner', mode = 'summary') {
 	if (reopeningArchives.has(id)) throw new Error('this archive is already being reopened');
 	reopeningArchives.add(id);
 	try {
-		let seedSummary = null, resumeId = null;
-		if (mode === 'resume' && meta.resumeId) {
-			resumeId = meta.resumeId;
-		} else {
-			// A still-pending summary is generated NOW (bounded by the summarizer's own
-			// timeout) so the reopened agent actually gets its context.
-			const summary = meta.summary ?? await summarize(id, { env: childEnv() });
-			if (summary) {
-				const when = new Date(meta.archivedAt || Date.now()).toISOString().slice(0, 10);
-				seedSummary = `Context from a previous session with this user (archived ${when}), so you can pick the work back up:\n${summary}`;
+		const chatLogSource = chatFilePath(id);
+		const uploadsSource = uploadsDirPath(id);
+		const created = create(
+			meta.cwd,
+			meta.agent || 'claude',
+			true,
+			creatorId,
+			meta.name || 'Chat',
+			meta.permissionMode || null,
+			{
+				resumeId: meta.resumeId || null,
+				model: meta.model || null,
+				effort: meta.effort || null,
+				chatLogSource,
+				uploadsSource
 			}
-		}
-		const created = create(meta.cwd, meta.agent || 'claude', true, creatorId, meta.name || 'Chat', meta.permissionMode || null,
-			{ seedSummary, resumeId, model: meta.model || null, effort: meta.effort || null });
-		// A visible note in the new chat showing exactly what the agent was told.
+		);
 		const s = sessions.get(created.id);
 		if (s?.emitChat) {
-			if (resumeId) s.emitChat({ t: 'system', text: 'Reopened from archive — resuming the full previous conversation.' });
-			else if (seedSummary) s.emitChat({ t: 'system', text: `Reopened from archive — summary injected:\n\n${seedSummary.split('\n').slice(1).join('\n')}` });
-			else s.emitChat({ t: 'system', text: 'Reopened from archive — no summary was available, starting fresh.' });
+			if (meta.resumeId) {
+				s.emitChat({ t: 'system', text: 'Reopened from archive — resuming conversation.' });
+			} else {
+				s.emitChat({ t: 'system', text: 'Reopened from archive — conversation history restored.' });
+			}
 		}
-		// Reopening CONSUMES the archive (Law, 2026-07-03): the conversation lives in the
-		// new session now, so it leaves Settings → Archived. Only after create() succeeded —
-		// a failed reopen must never eat the archive. Best-effort: a delete failure leaves
-		// a stale row rather than blocking the reopen.
+		// Reopening CONSUMES the archive: the conversation lives in the new session now.
 		try { deleteArchive(id); } catch { /* stale row beats a failed reopen */ }
 		return created;
 	} finally {
@@ -1579,8 +1640,28 @@ export async function handleApi(req, res) {
 		await handlePair(req, res, send);
 		return true;
 	}
-	if (!apiAuthOk(req)) {
-		send(401, { error: 'unauthorized' });
+
+	// Local Admin Deck / Control Plane endpoints:
+	// If requested directly from a local network (loopback, LAN, or Tailscale) without passing
+	// through the Cloudflare public tunnel, allow access. If a master password is set, verify
+	// the x-admin-password header or Bearer token.
+	const isLocal = isLocalRequest(req) && !isTunnelRequest(req);
+	const isLoopback = isLoopbackRequest(req) && !isTunnelRequest(req);
+	const hasPw = hasMasterPassword();
+	const adminHeaderPw = req.headers['x-admin-password'];
+	const adminPwOk = (hasPw && adminHeaderPw && checkMasterPassword(adminHeaderPw)) || apiTokenOk(req) || (!hasPw && isLocal);
+
+	const isControlDeckRoute = url.pathname.startsWith('/api/config') ||
+		url.pathname === '/api/pair/code' ||
+		url.pathname === '/api/agents' ||
+		url.pathname === '/api/devices';
+
+	if (url.pathname === '/api/config/password/verify') {
+		// Allow password verification attempt
+	} else if (isControlDeckRoute && isLocal && adminPwOk) {
+		// Authorized for local control deck!
+	} else if (!apiAuthOk(req)) {
+		send(401, { error: 'unauthorized', hasPassword: hasPw });
 		return true;
 	}
 	try {
@@ -1684,7 +1765,16 @@ export async function handleApi(req, res) {
 			const code = mintPairCode();
 			const host = req.headers.host || `${process.env.HOST || '127.0.0.1'}:${process.env.PORT || 3000}`;
 			const spk = daemonPublicKeyB64();
-			send(200, { code, display: formatPairCode(code), fingerprint: daemonFingerprint(), daemonPk: spk, uri: `codeout://pair?host=${encodeURIComponent(host)}&spk=${spk}&c=${code}&v=2` });
+			const uri = `codeout://pair?host=${encodeURIComponent(host)}&spk=${spk}&c=${code}&v=2`;
+			let qrDataUrl = null;
+			try {
+				qrDataUrl = await QRCode.toDataURL(uri, {
+					margin: 1,
+					width: 220,
+					color: { dark: '#000000', light: '#ffffff' }
+				});
+			} catch { /* ignore */ }
+			send(200, { code, display: formatPairCode(code), fingerprint: daemonFingerprint(), daemonPk: spk, uri, qrDataUrl });
 		} else if (req.method === 'POST' && url.pathname === '/api/sessions') {
 			const body = await readJson(req);
 			// Attribute the create to the requesting device (for per-device cap + rate). A
@@ -1764,16 +1854,14 @@ export async function handleApi(req, res) {
 				return true;
 			}
 			if (req.method === 'GET' && url.pathname === '/api/archive') {
-				// Light list: meta WITHOUT the summary text (that ships per-item on demand).
-				send(200, { archives: listArchives().map(({ summary, ...rest }) => rest) });
+				send(200, { archives: listArchives() });
 				return true;
 			}
 			const arcRe = url.pathname.match(/^\/api\/archive\/([^/]+)\/reopen$/);
 			if (req.method === 'POST' && arcRe) {
-				const body = await readJson(req);
 				const creatorId = deviceIdForToken(bearerToken(req)) || 'owner';
 				try {
-					send(200, await reopenArchive(decodeURIComponent(arcRe[1]), creatorId, body.mode === 'resume' ? 'resume' : 'summary'));
+					send(200, await reopenArchive(decodeURIComponent(arcRe[1]), creatorId));
 				} catch (e) {
 					if (e && e.code === 'EBUDGET') send(429, { error: String(e?.message ?? e) });
 					else send(400, { error: String(e?.message ?? e) });

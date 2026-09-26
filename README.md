@@ -12,7 +12,9 @@
 bun install -g codeoutcli && codeout
 ```
 
-Run Claude, Codex, Gemini, or a plain shell on your own machine, and drive them from your phone, tablet, or browser. Your code never leaves home. Neither do you have to.
+Run Claude, Codex, Gemini, OpenRouter, or a plain shell on your own machine, and drive them from your phone, tablet, or browser. Your code never leaves home. Neither do you have to.
+
+[Web Client (app.codeout.dev)](https://app.codeout.dev) • [iOS App (App Store)](https://apps.apple.com/app/codeout) • [Marketing & Docs (codeout.dev)](https://codeout.dev)
 
 </div>
 
@@ -27,7 +29,10 @@ No cloud. No relay. No account. The agent runs on your hardware; codeout is just
 ## What you get
 
 - **Runs on your machine.** The daemon lives on your box, with your files, your git, your tools. Your code never leaves home.
-- **Claude, Codex, Gemini, or bash.** Pick an agent per session, or drop to a plain shell, and run several at once (mix agents if the mood takes you). codeout drives whichever agent CLIs are on your machine and quietly hides the ones that aren't, so nobody has to feel left out.
+- **Claude, Codex, Gemini, OpenRouter, or bash.** Pick an agent per session, or drop to a plain shell, and run several at once (mix agents if the mood takes you). codeout drives whichever agent CLIs or API endpoints are on your machine, complete with tool execution and streaming reasoning.
+- **Host AI Control Deck.** A dedicated local dashboard (`http://localhost:8400/`) to manage provider credentials, switch between CLI subscription/OAuth and direct API keys, test connection latency, configure model allowlists, and revoke paired devices.
+- **Lossless Archive Lifecycle.** Finished a task? Archive it. Chat history, file uploads, and transcripts are preserved 1:1 with zero summarization loss or token waste, ready to reopen instantly whenever you need.
+- **Rich In-Chat Controls.** Real-time streaming prose and thinking/reasoning traces, dynamic `/model`, `/effort`, and `/mode` slash commands, interactive tool permission prompts, and one-tap Stop/interrupt.
 - **Every device, same sessions.** Pair your phone, tablet, and laptop. They all drive the same live sessions on the same machine.
 - **Public by default.** Running it opens an end-to-end-encrypted tunnel and gives this machine a stable address that does not change. Prefer your own network only? `--local`.
 - **Reboot-proof.** Install it as a service and it comes back on boot, same address, sessions reattached. Devices reconnect on their own.
@@ -41,28 +46,49 @@ bun install -g codeoutcli
 
 Also installs with `npm i -g codeoutcli`. Needs Node 20+ and [`cloudflared`](https://github.com/cloudflare/cloudflared) for the public tunnel (skip it and run `--local` if you only want your own network). The native pty ships prebuilt, so there is no compile step.
 
-**Runs natively on macOS, Linux, and Windows.** On macOS/Linux, [`dtach`](https://github.com/crigler/dtach) keeps terminal sessions alive across a daemon restart. Windows runs the agent directly under ConPTY (no `dtach`): terminal sessions survive a client disconnect but not a daemon restart, and chat sessions resume either way. On Windows, install the CLI (it asks which agents you want) with `irm https://codeout.dev/install.ps1 | iex`.
+**Runs natively on macOS, Linux, and Windows.** On macOS/Linux, [`dtach`](https://github.com/crigler/dtach) keeps terminal sessions alive across a daemon restart. Windows runs the agent directly under ConPTY (no `dtach`): terminal sessions survive a client disconnect but not a daemon restart, and chat sessions resume either way. On Windows, install the CLI (it asks which agents you want) with:
 
-## Agents
+```powershell
+irm https://codeout.dev/install.ps1 | iex
+```
 
-codeout doesn't ship an AI of its own; it drives the ones you already pay for. Install any mix of:
+## Agents & Host Control Deck
 
-- **Claude** - the Claude Code CLI (`claude`)
-- **Codex** - `npm i -g @openai/codex`
-- **Gemini** - via the Antigravity CLI (`agy`); runs as a **terminal** agent, not chat (Google cut the gemini CLI off consumer subs on 2026-06-18 — see CHAT-EVENTS.md § Agents)
+codeout doesn't ship a single locked-in AI of its own; it orchestrates and connects the coding models you already use on your hardware:
 
-Or let the one-line installers at [codeout.dev](https://codeout.dev) do it — they ask which agents you want and skip any you already have. Whatever is on your PATH shows up in the picker; the rest stay politely off-screen. Each agent signs in with its own login (an existing subscription, OAuth, or an API key), so codeout never touches your keys and you never pay for the privilege twice. Add another agent's CLI later and it just appears, no reinstall, no ceremony.
+| Agent | Engine / CLI | Models & Features |
+|---|---|---|
+| **Claude** | Claude Code CLI (`claude`) | Claude 3.7 Sonnet, 3.5 Sonnet, 3.5 Haiku, 3 Opus • Tool execution • Thinking streaming |
+| **Codex** | OpenAI Codex CLI (`codex`) | OpenAI o3-mini, GPT-4o, o1, GPT-4.5 Preview • Reasoning effort levels |
+| **Gemini** | Google Antigravity CLI (`agy`) | Gemini 3.5 Flash, 3.7 Flash, 3.1 Pro, 3.6 Flash • Dynamic slash commands |
+| **OpenRouter** | Native Direct Engine (`openrouter`) | Any OpenRouter model (Claude 3.7 Sonnet, DeepSeek R1, GPT-4o, Llama 3.3 70B, etc.) • Built-in tool engine (`run_command`, `read_file`, `write_file`, `edit_file`, `list_directory`) • Thinking token extraction |
+| **Shell** | Pure Native PTY | Native `bash`, `zsh`, or `powershell` with terminal resize and full VT100/xterm emulation |
+
+### 🎛️ Server-Authoritative AI Management
+
+All agent credentials, enabled providers, and model allowlists are configured server-side via the dedicated **Host Control Deck** (`http://localhost:8400/` or over LAN/Tailscale).
+
+- **Multi-Auth**: Use your existing host CLI subscription/OAuth login (zero API token charges), or configure a direct API key with masked storage.
+- **Connection Testing**: Test reachability and measure live round-trip latency to each provider with one click.
+- **Model Allowlisting**: Pick default models, customize reasoning effort levels, and dynamically populate client autocomplete options.
+- **Visual QR Pairing**: Scan pairing QR codes directly from the browser deck or your terminal.
+- **Device Management**: View all active paired devices and revoke access instantly.
+- **Master Password Protection**: Protect your control deck with native scrypt-hashed master authentication and one-click session locking.
+- **Zero Key Leakage**: Secrets stay 100% encrypted in `~/.codeout/config.json` (mode `0600`) on your machine. Client devices never touch raw keys.
 
 ## Quick start
 
 ```sh
 # on your machine
 codeout
-# -> opens a public tunnel (your stable name.codeout.dev) + a QR + a typeable code
+# -> opens the Host Control Deck on http://localhost:8400/
+#    + opens a public tunnel (your stable <name>.codeout.dev) + prints terminal QR & code
 #    (use `codeout --local` to stay on your LAN / Tailscale instead)
 
 # on your phone or browser
-# open the app, enter the address + code (or scan the QR), start a session
+# 1. Open app.codeout.dev (or the native iOS app from App Store)
+# 2. Point camera at the QR (in terminal or on http://localhost:8400/), or type the 12-char code
+# 3. Start coding!
 ```
 
 Public by default, so it works from anywhere. Pass `--local` to keep it on your own network (LAN + Tailscale) with nothing exposed to the internet.
@@ -113,14 +139,14 @@ After a reboot the daemon comes back on the same address and reattaches your ses
 
 ## Add your other devices
 
-From a device that is already paired, open **Settings -> Add a device** for a code, or run `codeout --pair` on the machine. Enter that code on the new device and it joins. Every paired device drives the same sessions. Revoke any device from Settings; revoke is instant and drops it mid-connection.
+From a device that is already paired, open **Settings -> Add a device** for a code, or run `codeout --pair` on the machine. Enter that code on the new device and it joins. Every paired device drives the same sessions. Revoke any device from Settings or the Host Control Deck; revoke is instant and drops it mid-connection.
 
 ## How it works
 
 Three parts, no surprises:
 
 - **The daemon** runs on your computer. It starts your agent, keeps the session alive with `dtach`, and serves an encrypted channel.
-- **Your devices** (phone, tablet, browser) pair once and give you a real terminal wherever you are. All the UI lives here.
+- **Your devices** (phone, tablet, browser) pair once and give you a real terminal and modern chat interface wherever you are. All the UI lives here.
 - **A direct encrypted link** connects them. Device to daemon, end to end. Nothing in the middle, nothing to read your data, nothing to fall over at 3am and take your workflow down with it.
 
 Most "code from your phone" tools route everything through their servers. codeout does not have servers. That is the whole point.
@@ -132,15 +158,15 @@ Most "code from your phone" tools route everything through their servers. codeou
 - Pairing is one-time, by QR or typeable code; private keys never leave your devices.
 - Per-device tokens you can revoke, plus a daemon challenge on every connection that defeats whole-stream replay.
 
-Wire details are in [PROTOCOL.md](./PROTOCOL.md). Found a hole? Open an issue. We would genuinely love to hear about it before someone else does.
+Wire details are in [PROTOCOL.md](./PROTOCOL.md) and event schemas in [CHAT-EVENTS.md](./CHAT-EVENTS.md). Found a hole? Open an issue. We would genuinely love to hear about it before someone else does.
 
 ## Status
 
-Early. It works, it is tested, and it is moving fast, occasionally without asking permission first. Star it if you want to watch it grow up; open a PR if you want to help raise it.
+Active and moving fast. Star it if you want to watch it grow; open a PR if you want to help raise it.
 
 ## Built with
 
-Bun, a small static file server for the prebuilt web UI (built from the sibling `webapp` repo into `webui/`), prebuilt node-pty, libsodium, and dtach for session persistence. JavaScript with JSDoc, because life is short.
+Bun, Svelte 5 + SvelteKit 2 (built from the sibling `webapp` repo into `webui/`), prebuilt node-pty, libsodium, and dtach for session persistence. JavaScript with JSDoc, because life is short.
 
 ## Contributing
 

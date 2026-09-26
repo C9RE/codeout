@@ -209,20 +209,20 @@ async function mintAgainstRunning(port) {
 
 function printNewDevice(got, port) {
 	const ips = lanIPs();
-	const lan = `${ips.find((x) => x.startsWith('100.')) || ips.find((x) => x.startsWith('192.168.') || x.startsWith('10.')) || 'localhost'}:${port}`;
-	// If this host has a public tunnel on record (the default run opens one), pair
-	// against that stable hostname so the new device works from anywhere, not just the LAN.
+	const ts = ips.find((x) => x.startsWith('100.'));
+	const lan = ips.find((x) => x.startsWith('192.168.') || x.startsWith('10.') || /^172\.(1[6-9]|2\d|3[01])\./.test(x));
 	let publicHost = null;
 	try { publicHost = JSON.parse(readFileSync(TUNNEL_FILE, 'utf8'))?.hostname || null; } catch { /* no tunnel on record */ }
-	const address = publicHost || lan;
+	const address = publicHost || (lan ? `${lan}:${port}` : (ts ? `${ts}:${port}` : `localhost:${port}`));
 	const uri = `codeout://pair?host=${encodeURIComponent(address)}&spk=${daemonPublicKeyB64()}&c=${got.code}&v=2`;
 	let qr = '';
 	qrcode.generate(uri, { small: true }, (o) => { qr = o; });
 	console.log();
-	console.log('  ' + bold('Pair a new device') + dim('  scan the QR, or type the code'));
+	console.log('  ' + bold('Pair a new device') + dim('  scan the QR, or type the code in app.codeout.dev / iOS app'));
 	console.log(qr.replace(/\n/g, '\n    ').replace(/^/, '    '));
-	console.log('    address      ' + address + (publicHost ? dim('   public') : dim('   local only')));
-	if (publicHost) console.log('    local        ' + dim(lan));
+	console.log('    address      ' + (publicHost ? `https://${publicHost}` : (lan ? `http://${lan}:${port}` : `http://localhost:${port}`)));
+	if (lan && (publicHost || ts)) console.log('    LAN Network  ' + dim(`http://${lan}:${port}`));
+	if (ts && (publicHost || lan)) console.log('    Tailscale    ' + dim(`http://${ts}:${port}`));
 	console.log('    code         ' + pink(got.display || formatPairCode(got.code)) + dim('   valid 5 min'));
 	console.log('    fingerprint  ' + bold(got.fingerprint || daemonFingerprint()));
 	console.log();
@@ -359,7 +359,7 @@ const { port } = await startDaemon({ port: args.port, host: '0.0.0.0' });
 const ips = lanIPs();
 const ts = ips.find((i) => i.startsWith('100.'));
 const lan = ips.find((i) => i.startsWith('192.168.') || i.startsWith('10.') || /^172\.(1[6-9]|2\d|3[01])\./.test(i));
-let address = `${ts || lan || 'localhost'}:${port}`;
+let address = `${lan || ts || 'localhost'}:${port}`;
 let publicUrl = null;
 
 console.log();
@@ -382,17 +382,20 @@ const uri = `codeout://pair?host=${encodeURIComponent(address)}&spk=${daemonPubl
 let qr = '';
 qrcode.generate(uri, { small: true }, (out) => { qr = out; });
 
-console.log('  ' + bold('Console') + dim('  (this machine)'));
-console.log('    http://localhost:' + port + '/?token=' + TOKEN);
+console.log('  ' + bold('Host Control Deck & Endpoints:'));
+console.log('    Localhost    http://localhost:' + port + '/');
+if (lan) console.log('    LAN Network  http://' + lan + ':' + port + '/   ' + dim('(Home Wi-Fi / Local Network)'));
+if (ts)  console.log('    Tailscale    http://' + ts + ':' + port + '/   ' + dim('(Tailnet VPN)'));
+if (publicUrl) console.log('    Tunnel (E2E) ' + publicUrl + '   ' + dim('(Public Internet)'));
 console.log();
-console.log('  ' + bold('Pair a device') + dim('  scan the QR, or type the code'));
+console.log('  ' + bold('Pair a device') + dim('  scan the QR, or type the code in app.codeout.dev / iOS app'));
 console.log(qr.replace(/\n/g, '\n    ').replace(/^/, '    '));
-console.log('    address      ' + (publicUrl || address));
+console.log('    address      ' + (publicUrl || (lan ? `http://${lan}:${port}` : (ts ? `http://${ts}:${port}` : `http://localhost:${port}`))));
 console.log('    code         ' + pink(formatPairCode(code)) + dim('   valid 5 min'));
 console.log('    fingerprint  ' + bold(daemonFingerprint()) + dim('   confirm this matches in the app'));
 console.log();
 console.log('  ' + (publicUrl
 	? dim('Reachable from anywhere via the tunnel above. The link stays end-to-end encrypted.')
-	: dim('Local only (LAN + Tailscale). Run `codeout` with no flag to open a public tunnel.')));
+	: dim('Local only (LAN / Wi-Fi + Tailscale). Run `codeout` with no flag to open a public tunnel.')));
 console.log('  ' + dim('Ctrl-C to stop. Your sessions keep running and reattach next launch.'));
 console.log();

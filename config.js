@@ -10,7 +10,7 @@ const CODEOUT_HOME = process.env.CODEOUT_HOME || join(homedir(), '.codeout');
 const CONFIG_FILE = join(CODEOUT_HOME, 'config.json');
 
 function writeAtomic(path, data, mode = 0o600) {
-	const tmp = `${path}.tmp`;
+	const tmp = `${path}.${randomBytes(6).toString('hex')}.tmp`;
 	writeFileSync(tmp, data, { mode });
 	renameSync(tmp, path);
 }
@@ -38,34 +38,64 @@ function defaultAgents() {
 	return {
 		claude: {
 			enabled: true,
+			chat: true,
 			name: 'Claude Code',
 			authMode: 'subscription', // 'subscription' | 'apiKey'
 			apiKey: null,
 			baseUrl: null,
 			defaultModel: 'claude-3-7-sonnet',
-			allowedModels: ['claude-3-7-sonnet', 'claude-3-5-haiku', 'claude-3-opus'],
+			allowedModels: ['claude-3-7-sonnet', 'claude-3-5-sonnet', 'claude-3-5-haiku', 'claude-3-opus'],
 			hasEffort: true,
 			efforts: ['low', 'medium', 'high', 'max']
 		},
 		codex: {
 			enabled: true,
+			chat: true,
 			name: 'OpenAI Codex',
 			authMode: 'subscription', // 'subscription' | 'apiKey'
 			apiKey: null,
 			baseUrl: null,
 			defaultModel: 'o3-mini',
-			allowedModels: ['o3-mini', 'gpt-4o', 'o1'],
+			allowedModels: ['o3-mini', 'gpt-4o', 'o1', 'gpt-4.5-preview'],
 			hasEffort: true,
 			efforts: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh']
 		},
 		gemini: {
 			enabled: true,
+			chat: true,
 			name: 'Gemini (Antigravity)',
 			authMode: 'subscription', // 'subscription' | 'apiKey'
 			apiKey: null,
 			baseUrl: null,
-			defaultModel: 'gemini-2.5-pro',
-			allowedModels: ['gemini-2.5-pro', 'gemini-2.5-flash'],
+			defaultModel: 'gemini-3.8-flash',
+			allowedModels: [
+				'gemini-3.8-flash',
+				'gemini-3.7-flash',
+				'gemini-3.6-flash',
+				'gemini-3.1-pro',
+				'claude-sonnet-4-6',
+				'claude-opus-4-6-thinking',
+				'gpt-oss-120b-medium'
+			],
+			hasEffort: true,
+			efforts: ['low', 'medium', 'high']
+		},
+		openrouter: {
+			enabled: false,
+			chat: true,
+			name: 'OpenRouter',
+			authMode: 'apiKey', // 'apiKey'
+			apiKey: null,
+			baseUrl: 'https://openrouter.ai/api/v1',
+			defaultModel: 'deepseek/deepseek-r1',
+			allowedModels: [
+				'deepseek/deepseek-r1',
+				'deepseek/deepseek-chat',
+				'anthropic/claude-3.7-sonnet',
+				'meta-llama/llama-3.3-70b-instruct',
+				'qwen/qwen-2.5-coder-32b-instruct',
+				'google/gemini-2.5-pro'
+			],
 			hasEffort: false,
 			efforts: []
 		}
@@ -92,10 +122,35 @@ export function loadConfig() {
 	try {
 		if (existsSync(CONFIG_FILE)) {
 			const parsed = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+			const defAgents = defaultAgents();
+			const mergedAgents = {};
+			for (const [id, def] of Object.entries(defAgents)) {
+				const userAgent = parsed.agents?.[id] || {};
+				mergedAgents[id] = {
+					...def,
+					...userAgent,
+					allowedModels: Array.from(new Set([...(def.allowedModels || []), ...(userAgent.allowedModels || [])])),
+					efforts: Array.from(new Set([...(def.efforts || []), ...(userAgent.efforts || [])]))
+				};
+				if (id === 'gemini') {
+					// Clean out legacy / unsupported models that agy rejects
+					mergedAgents[id].allowedModels = mergedAgents[id].allowedModels.filter(
+						(m) => !m.startsWith('gemini-2.5') && !m.startsWith('gemini-3.5')
+					);
+					if (
+						!mergedAgents[id].defaultModel ||
+						mergedAgents[id].defaultModel.startsWith('gemini-2.5') ||
+						mergedAgents[id].defaultModel.startsWith('gemini-3.5')
+					) {
+						mergedAgents[id].defaultModel = 'gemini-3.8-flash';
+					}
+				}
+			}
 			configCache = {
 				version: 2,
+				token: parsed.token || undefined,
 				server: { ...defaultConfig().server, ...(parsed.server || {}) },
-				agents: { ...defaultAgents(), ...(parsed.agents || {}) }
+				agents: mergedAgents
 			};
 			return configCache;
 		}
@@ -110,7 +165,16 @@ export function saveConfig(cfg) {
 	configCache = cfg;
 	try {
 		mkdirSync(CODEOUT_HOME, { recursive: true, mode: 0o700 });
-		writeAtomic(CONFIG_FILE, JSON.stringify(cfg, null, 2), 0o600);
+		let token = cfg.token;
+		if (!token && existsSync(CONFIG_FILE)) {
+			try {
+				const existing = JSON.parse(readFileSync(CONFIG_FILE, 'utf8'));
+				if (existing?.token) token = existing.token;
+			} catch { /* ignore */ }
+		}
+		const toWrite = { ...cfg };
+		if (token) toWrite.token = token;
+		writeAtomic(CONFIG_FILE, JSON.stringify(toWrite, null, 2), 0o600);
 	} catch (e) {
 		console.error('[codeout] config persist failed:', e?.message ?? e);
 	}
@@ -157,6 +221,7 @@ export function getAdminConfig(env) {
 		agentsOut[id] = {
 			...agent,
 			id,
+			chat: true,
 			installed: det.installed,
 			version: det.version,
 			apiKeyMasked: agent.apiKey ? maskApiKey(agent.apiKey) : null,
@@ -177,8 +242,14 @@ export function getAdminConfig(env) {
 
 // Update specific agent's configuration
 export function updateAgentConfig(agentId, patch) {
+	if (typeof agentId !== 'string' || !agentId || agentId === '__proto__' || agentId === 'constructor' || agentId === 'prototype' || !/^[a-zA-Z0-9_-]{1,40}$/.test(agentId)) {
+		throw new Error('Invalid agent ID');
+	}
+	if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+		throw new Error('Invalid patch object');
+	}
 	const cfg = loadConfig();
-	if (!cfg.agents[agentId]) {
+	if (!Object.prototype.hasOwnProperty.call(cfg.agents, agentId) || !cfg.agents[agentId]) {
 		cfg.agents[agentId] = {
 			enabled: true,
 			name: agentId,
@@ -208,15 +279,21 @@ export function updateAgentConfig(agentId, patch) {
 
 // Returns unmasked API key / auth config for execution
 export function getAgentAuth(agentId) {
+	if (typeof agentId !== 'string' || !agentId || agentId === '__proto__' || agentId === 'constructor' || agentId === 'prototype') {
+		return { enabled: false, authMode: 'subscription', apiKey: null, baseUrl: null, defaultModel: null, allowedModels: [], hasEffort: false, efforts: [] };
+	}
 	const cfg = loadConfig();
-	const agent = cfg.agents[agentId];
-	if (!agent) return { authMode: 'subscription', apiKey: null, baseUrl: null };
+	const agent = Object.prototype.hasOwnProperty.call(cfg.agents, agentId) ? cfg.agents[agentId] : null;
+	if (!agent) return { enabled: false, authMode: 'subscription', apiKey: null, baseUrl: null, defaultModel: null, allowedModels: [], hasEffort: false, efforts: [] };
 	return {
 		enabled: agent.enabled !== false,
 		authMode: agent.authMode || 'subscription',
 		apiKey: agent.apiKey || null,
 		baseUrl: agent.baseUrl || null,
-		defaultModel: agent.defaultModel || null
+		defaultModel: agent.defaultModel || null,
+		allowedModels: agent.allowedModels || [],
+		hasEffort: Boolean(agent.hasEffort),
+		efforts: agent.efforts || []
 	};
 }
 
@@ -240,6 +317,7 @@ export function getClientAgentsList(env) {
 			version: det.version,
 			authMode: agent.authMode,
 			defaultModel: agent.defaultModel,
+			allowedModels: agent.allowedModels || [],
 			models: agent.allowedModels || [],
 			hasEffort: Boolean(agent.hasEffort),
 			efforts: agent.efforts || []

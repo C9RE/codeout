@@ -11,11 +11,81 @@ import { createInterface } from 'node:readline';
 import { CHAT_SYSTEM_PROMPT } from './claude-chat.js';
 
 export const BUILTINS = [
-	{ name: 'model', description: 'Switch model (gemini-3.7-flash, gemini-3-pro)' },
+	{ name: 'model', description: 'Switch model (gemini-3.8-flash, gemini-3.7-flash, gemini-3.1-pro)' },
 	{ name: 'effort', description: 'Reasoning effort (low|medium|high)' },
 	{ name: 'mode', description: 'accept-edits|plan' },
 	{ name: 'clear', description: 'Start a fresh chat' }
 ];
+
+/**
+ * Normalizes user-supplied or config model & effort into valid `agy` flags.
+ * Handles shorthands (e.g. "3.8", "flash", "pro", "sonnet"), legacy models (2.5, 3.5),
+ * and enforces required effort flags (e.g. gemini-3.8-flash requires low|medium|high).
+ */
+export function resolveGeminiModel(rawModel, rawEffort) {
+	let model = String(rawModel || '').trim();
+	let effort = String(rawEffort || '').trim().toLowerCase() || null;
+
+	if (!model) {
+		return { model: 'gemini-3.8-flash', effort: effort || 'medium' };
+	}
+
+	const lower = model.toLowerCase();
+
+	// Check if effort is embedded in model string (e.g. "3.8 high", "3.8-high", "gemini-3.8-flash-high")
+	if (lower.endsWith('-high') || lower.endsWith(' high')) {
+		effort = 'high';
+	} else if (lower.endsWith('-low') || lower.endsWith(' low')) {
+		effort = 'low';
+	} else if (lower.endsWith('-medium') || lower.endsWith(' medium')) {
+		effort = 'medium';
+	}
+
+	// Strip effort suffix from lower for clean model matching
+	const clean = lower.replace(/[- ](high|medium|low)$/, '').trim();
+
+	let resolvedModel = model;
+
+	if (clean === '3.8' || clean === '3.8-flash' || clean === 'flash-3.8' || clean === 'gemini-3.8' || clean === 'gemini-3.8-flash' || clean === 'flash') {
+		resolvedModel = 'gemini-3.8-flash';
+	} else if (clean === '3.7' || clean === '3.7-flash' || clean === 'flash-3.7' || clean === 'gemini-3.7' || clean === 'gemini-3.7-flash') {
+		resolvedModel = 'gemini-3.7-flash';
+	} else if (clean === '3.6' || clean === '3.6-flash' || clean === 'flash-3.6' || clean === 'gemini-3.6' || clean === 'gemini-3.6-flash') {
+		resolvedModel = 'gemini-3.6-flash';
+	} else if (clean === '3.1' || clean === '3.1-pro' || clean === 'pro-3.1' || clean === 'gemini-3.1' || clean === 'gemini-3.1-pro' || clean === 'pro' || clean === '3-pro' || clean === 'gemini-3-pro') {
+		resolvedModel = 'gemini-3.1-pro';
+	} else if (clean.includes('sonnet')) {
+		resolvedModel = 'claude-sonnet-4-6';
+		effort = null;
+	} else if (clean.includes('opus')) {
+		resolvedModel = 'claude-opus-4-6-thinking';
+		effort = null;
+	} else if (clean.includes('oss') || clean.includes('gpt-oss') || clean === 'gpt') {
+		resolvedModel = 'gpt-oss-120b-medium';
+		effort = null;
+	} else if (clean.startsWith('gemini-2.5') || clean.startsWith('gemini-3.5')) {
+		// Obsolete models migrated to latest flash
+		resolvedModel = 'gemini-3.8-flash';
+	}
+
+	// If model already ends with an effort suffix (e.g. gemini-3.8-flash-high), no --effort needed
+	if (/-(low|medium|high)$/.test(resolvedModel)) {
+		effort = null;
+	} else if (['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash'].includes(resolvedModel)) {
+		if (!effort || !['low', 'medium', 'high'].includes(effort)) {
+			effort = 'medium';
+		}
+	} else if (resolvedModel === 'gemini-3.1-pro') {
+		// gemini-3.1-pro only supports low and high in agy
+		if (effort !== 'low' && effort !== 'high') {
+			effort = 'high';
+		}
+	} else if (['claude-sonnet-4-6', 'claude-opus-4-6-thinking', 'gpt-oss-120b-medium'].includes(resolvedModel)) {
+		effort = null;
+	}
+
+	return { model: resolvedModel, effort };
+}
 
 /** Map ONE agy `stream-json` NDJSON event → ChatEvents (pure; exported for unit testing). */
 export function mapGeminiUpdate(evt, { emit, onSessionId, onSlashCommands, onMeta, items = new Map() }) {
@@ -116,8 +186,10 @@ export function startGeminiChat({ cwd, env, resumeId = null, model = null, effor
 			const bin = env?.AGY_CMD || 'agy';
 			const args = ['-p', toSend, '--output-format', 'stream-json', '--dangerously-skip-permissions'];
 			if (sessionId) args.push('--conversation', sessionId);
-			if (model) args.push('--model', model);
-			if (effort) args.push('--effort', effort);
+
+			const resolved = resolveGeminiModel(model, effort);
+			if (resolved.model) args.push('--model', resolved.model);
+			if (resolved.effort) args.push('--effort', resolved.effort);
 
 			let child;
 			try {

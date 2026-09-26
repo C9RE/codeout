@@ -80,10 +80,8 @@ export default {
 		const port = env.PORT || '8400';
 		let body = {};
 		try { body = await req.json(); } catch { /* no body -> anonymous random slug */ }
-		// Deterministic hostname when the daemon sends its pubkey: same machine -> same
-		// subdomain on every boot, so paired devices reconnect after a reboot. Anonymous
-		// callers still get a random slug.
-		const slug = body && body.pubkey ? await slugFromPubkey(body.pubkey) : makeSlug();
+		const pubkey = typeof body?.pubkey === 'string' && body.pubkey.length > 0 && body.pubkey.length <= 256 ? body.pubkey : null;
+		const slug = pubkey ? await slugFromPubkey(pubkey) : makeSlug();
 		const name = `codeout-${slug}`;
 		const host = `${slug}.codeout.dev`;
 		try {

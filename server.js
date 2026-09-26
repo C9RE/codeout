@@ -14,6 +14,7 @@ import { isTunnelRequest, isLocalRequest } from './auth.js';
 // The built web UI lives here (webapp build output, copied by `bun run build`).
 const WEBUI_DIR = join(dirname(fileURLToPath(import.meta.url)), 'webui');
 const INDEX = join(WEBUI_DIR, 'index.html');
+const ADMIN_HTML = join(dirname(fileURLToPath(import.meta.url)), 'admin.html');
 
 // Minimal extension -> content-type map (only what the SPA build actually emits).
 const MIME = {
@@ -82,7 +83,9 @@ function serveStatic(req, res) {
 	}
 	let pathname;
 	try { pathname = decodeURIComponent(u.pathname); } catch { pathname = '/'; }
-	if (pathname === '/') pathname = '/index.html';
+	if (pathname === '/' || pathname === '/admin' || pathname === '/admin.html' || pathname === '/index.html') {
+		if (sendFile(res, ADMIN_HTML)) return;
+	}
 
 	// Normalize and pin under WEBUI_DIR. normalize() collapses ../ ; the prefix check
 	// then rejects anything that escaped the root (defence in depth).

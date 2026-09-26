@@ -56,7 +56,13 @@ export function closeDeviceConnections(pkB64) {
 	const set = liveByDevice.get(pkB64);
 	if (!set) return 0;
 	let n = 0;
-	for (const ws of set) { try { ws.close(1008, 'device revoked'); n++; } catch { /* already closed */ } }
+	for (const ws of set) {
+		try {
+			ws.close(1008, 'device revoked');
+			ws.terminate();
+			n++;
+		} catch { /* already closed */ }
+	}
 	liveByDevice.delete(pkB64);
 	return n;
 }
