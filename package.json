@@ -1,6 +1,6 @@
 {
 	"name": "codeoutcli",
-	"version": "1.5.0",
+	"version": "1.6.0",
 	"type": "module",
 	"description": "Self-hosted GUI for your AI coding agents. Run Claude or a shell on your own machine and drive it from your phone or browser, end-to-end encrypted.",
 	"license": "MIT",
@@ -37,6 +37,7 @@
 		"claude-chat.js",
 		"codex-chat.js",
 		"gemini-chat.js",
+		"openrouter-chat.js",
 		"json-rpc.js",
 		"agents.js",
 		"apns.js",
