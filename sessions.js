@@ -8,8 +8,8 @@ import Busboy from 'busboy';
 import QRCode from 'qrcode';
 import { homedir } from 'node:os';
 import { basename, join, resolve as resolvePath, isAbsolute, sep, extname } from 'node:path';
-import { existsSync, mkdirSync, createWriteStream, writeFileSync, readFileSync, unlinkSync, readdirSync, statSync, createReadStream, accessSync, realpathSync, rmSync, renameSync, constants as FS } from 'node:fs';
-import { apiTokenOk, apiAuthOk, originOk, bearerToken, isLocalRequest, isTunnelRequest } from './auth.js';
+import { existsSync, mkdirSync, createWriteStream, writeFileSync, readFileSync, unlinkSync, readdirSync, statSync, createReadStream, accessSync, realpathSync, rmSync, renameSync, copyFileSync, constants as FS } from 'node:fs';
+import { apiTokenOk, apiAuthOk, originOk, bearerToken, isLocalRequest, isLoopbackRequest, isTunnelRequest } from './auth.js';
 import { initCrypto, mintPairCode, consumePairCode, registerDevice, mintDeviceToken, daemonPublicKeyB64, formatPairCode, daemonFingerprint, listDevices, deviceIdForToken, revokeDevice, updateDevice, isValidColour, isValidAvatar, setDevicePush, clearDevicePush, pushTargets } from './crypto.js';
 import { sendPush, apnsEnabled } from './apns.js';
 import { closeDeviceConnections } from './pty-bridge.js';
@@ -17,12 +17,13 @@ import { PersistentChatLog, evId } from './chat-events.js';
 import { startClaudeChat } from './claude-chat.js';
 import { startCodexChat } from './codex-chat.js';
 import { startGeminiChat, resolveGeminiModel } from './gemini-chat.js';
+import { startOpenRouterChat } from './openrouter-chat.js';
 import { detectAgents, testAgentConnection } from './agents.js';
 import { getAdminConfig, updateAgentConfig, getAgentAuth, getClientAgentsList, setMasterPassword, checkMasterPassword, hasMasterPassword } from './config.js';
 // Chat backend dispatch: agent name → the module that normalizes it to ChatEvents. All take the
 // SAME opts; the host (wireChat/relaunchBackend) is agent-agnostic.
-const CHAT_BACKENDS = { claude: startClaudeChat, codex: startCodexChat, gemini: startGeminiChat, agy: startGeminiChat };
-import { archiveMove, listArchives, readArchiveMeta, deleteArchive, summarize } from './archive.js';
+const CHAT_BACKENDS = { claude: startClaudeChat, codex: startCodexChat, gemini: startGeminiChat, agy: startGeminiChat, openrouter: startOpenRouterChat };
+import { archiveMove, listArchives, readArchiveMeta, deleteArchive, chatFilePath, uploadsDirPath } from './archive.js';
 
 const MAX_BUFFER = 256 * 1024; // recent output replayed on reattach (for redraw)
 const MAX_UPLOAD = Number(process.env.COCKPIT_MAX_UPLOAD) || 100 * 1024 * 1024; // 100 MB/file cap
@@ -132,8 +133,8 @@ function acquireDaemonLock() {
 	}
 }
 
-// Root the "+" menu discovers project folders under (override with COCKPIT_ROOT).
-const ROOT = process.env.COCKPIT_ROOT || join(homedir(), 'core');
+// Root the "+" menu discovers project folders under (override with CODEOUT_ROOT or COCKPIT_ROOT).
+const ROOT = process.env.CODEOUT_ROOT || process.env.COCKPIT_ROOT || (existsSync(join(homedir(), 'core')) ? join(homedir(), 'core') : (existsSync('/home/law/core') ? '/home/law/core' : join(homedir(), 'core')));
 
 // ---- Upload directory (server-side, shared across all devices) ----
 // WHERE uploaded files land on the SERVER is a daemon concern, not a per-device one, so it's
@@ -328,7 +329,7 @@ function persist() {
 // resolves the agent CLI; agents drop back to a shell on exit (`exec bash`), so the tab
 // survives quitting the agent.
 // 'agy' / 'gemini' = Antigravity / Gemini agent (AI Pro subscription via agy stream-json).
-const AGENTS = new Set(['bash', 'claude', 'codex', 'gemini', 'agy']);
+const AGENTS = new Set(['bash', 'claude', 'codex', 'gemini', 'agy', 'openrouter']);
 
 // A new session may only start in ROOT or one of the curated project folders
 // (exactly what the picker offers) - never an arbitrary path like /etc or /root.
@@ -690,6 +691,10 @@ function wireChat(s, fresh) {
 				if (s.agent === 'claude') sessionEnv.ANTHROPIC_API_KEY = auth.apiKey;
 				else if (s.agent === 'codex') sessionEnv.OPENAI_API_KEY = auth.apiKey;
 				else if (s.agent === 'gemini' || s.agent === 'agy') sessionEnv.GEMINI_API_KEY = auth.apiKey;
+				else if (s.agent === 'openrouter') {
+					sessionEnv.OPENROUTER_API_KEY = auth.apiKey;
+					if (auth.baseUrl) sessionEnv.OPENROUTER_BASE_URL = auth.baseUrl;
+				}
 			}
 			if (!s.model && auth.defaultModel) s.model = auth.defaultModel;
 			if (s.agent === 'gemini' || s.agent === 'agy') {
@@ -1169,9 +1174,23 @@ export function create(cwd = ROOT, agent = 'bash', chatMode = false, creatorId =
 	const permMode = validatePermissionMode(permissionMode) || readDefaultPermissionMode();
 	/** @type {Session} */
 	const s = { id, cwd, agent: a, name: name || (chatMode ? 'Chat' : 'Terminal'), avatar: null, socket: join(SOCKET_DIR, id), created: Date.now(), pty: null, buffer: [], clients: new Set(), chatMode: !!chatMode, permissionMode: permMode, owner: creatorId };
-	// Archive-reopen seeding — set BEFORE wire() so the first backend launch carries it:
-	// seedSummary rides --append-system-prompt; resumeId makes it a native full resume.
-	if (chatMode && typeof opts.seedSummary === 'string' && opts.seedSummary) s.seedSummary = opts.seedSummary;
+
+	// Archive unarchive / transcript restoration:
+	// If reopening from an archive, restore its chat log and uploads to the new session's path before wiring:
+	if (chatMode && opts.chatLogSource && existsSync(opts.chatLogSource)) {
+		mkdirSync(CHAT_LOG_DIR, { recursive: true, mode: 0o700 });
+		copyFileSync(opts.chatLogSource, join(CHAT_LOG_DIR, `${id}.jsonl`));
+	}
+	if (chatMode && opts.uploadsSource && existsSync(opts.uploadsSource)) {
+		const destUp = join(uploadsDir(), id);
+		mkdirSync(destUp, { recursive: true, mode: 0o700 });
+		try {
+			for (const file of readdirSync(opts.uploadsSource)) {
+				copyFileSync(join(opts.uploadsSource, file), join(destUp, file));
+			}
+		} catch { /* best-effort */ }
+	}
+
 	if (chatMode && typeof opts.resumeId === 'string' && opts.resumeId) s.resumeId = opts.resumeId;
 	if (chatMode && typeof opts.model === 'string' && opts.model) s.model = opts.model;
 	if (chatMode && typeof opts.effort === 'string' && opts.effort) s.effort = opts.effort;
@@ -1264,8 +1283,7 @@ export function kill(id) {
 
 /**
  * Archive a CHAT session: same teardown as kill() but the transcript survives.
- * The chat log + uploads move to ~/.codeout/archive/<id>/ with a meta record, and a
- * summary is generated async (fire-and-forget; reopen retries a still-pending one).
+ * The chat log + uploads move to ~/.codeout/archive/<id>/ with a meta record.
  * Terminal sessions can't archive (no transcript) — callers keep kill() for those.
  * @returns {object|null} the archive meta, or null (unknown id / not a chat session)
  */
@@ -1286,25 +1304,17 @@ export function archiveSession(id) {
 		{ id: s.id, name: s.name, avatar: s.avatar, cwd: s.cwd, agent: s.agent, model: s.model ?? null, effort: s.effort ?? null, permissionMode: s.permissionMode ?? null, created: s.created, resumeId: s.resumeId ?? null },
 		{ chatLogFile: join(CHAT_LOG_DIR, `${s.id}.jsonl`), uploadsPath: join(uploadsDir(), s.id) }
 	);
-	// Summarize in the background — archive returns immediately, the meta fills in.
-	void summarize(id, { env: childEnv() }).catch(() => { /* stays pending; reopen retries */ });
 	return meta;
 }
 
 /**
- * Reopen an archived chat as a FRESH session seeded with its summary (default), or as
- * a native full resume when mode==='resume' and the resumeId survived. The old
- * transcript stays in the archive (viewable/exportable) — it is NOT replayed into the
- * new session's log.
+ * Reopen an archived chat: restores the full past conversation history and uploads
+ * directly into a new session. If native resumeId exists, links session resumption.
  * @returns {Promise<object>} the create() result for the new session
  */
-// Archive ids currently being reopened — an idempotency lock. Reopen awaits a summary that
-// can take up to the summarizer's timeout, so a double-tap, two paired devices, or a client
-// timeout-retry could otherwise pass the readArchiveMeta check twice and create TWO live
-// sessions from one archive. The guard collapses those to one.
 const reopeningArchives = new Set();
 
-export async function reopenArchive(id, creatorId = 'owner', mode = 'summary') {
+export async function reopenArchive(id, creatorId = 'owner') {
 	const meta = readArchiveMeta(id);
 	if (!meta) throw new Error('archive not found');
 	if (!existsSync(meta.cwd)) throw new Error('the original folder no longer exists');
@@ -1312,31 +1322,32 @@ export async function reopenArchive(id, creatorId = 'owner', mode = 'summary') {
 	if (reopeningArchives.has(id)) throw new Error('this archive is already being reopened');
 	reopeningArchives.add(id);
 	try {
-		let seedSummary = null, resumeId = null;
-		if (mode === 'resume' && meta.resumeId) {
-			resumeId = meta.resumeId;
-		} else {
-			// A still-pending summary is generated NOW (bounded by the summarizer's own
-			// timeout) so the reopened agent actually gets its context.
-			const summary = meta.summary ?? await summarize(id, { env: childEnv() });
-			if (summary) {
-				const when = new Date(meta.archivedAt || Date.now()).toISOString().slice(0, 10);
-				seedSummary = `Context from a previous session with this user (archived ${when}), so you can pick the work back up:\n${summary}`;
+		const chatLogSource = chatFilePath(id);
+		const uploadsSource = uploadsDirPath(id);
+		const created = create(
+			meta.cwd,
+			meta.agent || 'claude',
+			true,
+			creatorId,
+			meta.name || 'Chat',
+			meta.permissionMode || null,
+			{
+				resumeId: meta.resumeId || null,
+				model: meta.model || null,
+				effort: meta.effort || null,
+				chatLogSource,
+				uploadsSource
 			}
-		}
-		const created = create(meta.cwd, meta.agent || 'claude', true, creatorId, meta.name || 'Chat', meta.permissionMode || null,
-			{ seedSummary, resumeId, model: meta.model || null, effort: meta.effort || null });
-		// A visible note in the new chat showing exactly what the agent was told.
+		);
 		const s = sessions.get(created.id);
 		if (s?.emitChat) {
-			if (resumeId) s.emitChat({ t: 'system', text: 'Reopened from archive — resuming the full previous conversation.' });
-			else if (seedSummary) s.emitChat({ t: 'system', text: `Reopened from archive — summary injected:\n\n${seedSummary.split('\n').slice(1).join('\n')}` });
-			else s.emitChat({ t: 'system', text: 'Reopened from archive — no summary was available, starting fresh.' });
+			if (meta.resumeId) {
+				s.emitChat({ t: 'system', text: 'Reopened from archive — resuming conversation.' });
+			} else {
+				s.emitChat({ t: 'system', text: 'Reopened from archive — conversation history restored.' });
+			}
 		}
-		// Reopening CONSUMES the archive (Law, 2026-07-03): the conversation lives in the
-		// new session now, so it leaves Settings → Archived. Only after create() succeeded —
-		// a failed reopen must never eat the archive. Best-effort: a delete failure leaves
-		// a stale row rather than blocking the reopen.
+		// Reopening CONSUMES the archive: the conversation lives in the new session now.
 		try { deleteArchive(id); } catch { /* stale row beats a failed reopen */ }
 		return created;
 	} finally {
@@ -1635,9 +1646,10 @@ export async function handleApi(req, res) {
 	// through the Cloudflare public tunnel, allow access. If a master password is set, verify
 	// the x-admin-password header or Bearer token.
 	const isLocal = isLocalRequest(req) && !isTunnelRequest(req);
+	const isLoopback = isLoopbackRequest(req) && !isTunnelRequest(req);
 	const hasPw = hasMasterPassword();
 	const adminHeaderPw = req.headers['x-admin-password'];
-	const adminPwOk = !hasPw || (adminHeaderPw && checkMasterPassword(adminHeaderPw));
+	const adminPwOk = (hasPw && adminHeaderPw && checkMasterPassword(adminHeaderPw)) || apiTokenOk(req) || (!hasPw && isLocal);
 
 	const isControlDeckRoute = url.pathname.startsWith('/api/config') ||
 		url.pathname === '/api/pair/code' ||
@@ -1842,16 +1854,14 @@ export async function handleApi(req, res) {
 				return true;
 			}
 			if (req.method === 'GET' && url.pathname === '/api/archive') {
-				// Light list: meta WITHOUT the summary text (that ships per-item on demand).
-				send(200, { archives: listArchives().map(({ summary, ...rest }) => rest) });
+				send(200, { archives: listArchives() });
 				return true;
 			}
 			const arcRe = url.pathname.match(/^\/api\/archive\/([^/]+)\/reopen$/);
 			if (req.method === 'POST' && arcRe) {
-				const body = await readJson(req);
 				const creatorId = deviceIdForToken(bearerToken(req)) || 'owner';
 				try {
-					send(200, await reopenArchive(decodeURIComponent(arcRe[1]), creatorId, body.mode === 'resume' ? 'resume' : 'summary'));
+					send(200, await reopenArchive(decodeURIComponent(arcRe[1]), creatorId));
 				} catch (e) {
 					if (e && e.code === 'EBUDGET') send(429, { error: String(e?.message ?? e) });
 					else send(400, { error: String(e?.message ?? e) });

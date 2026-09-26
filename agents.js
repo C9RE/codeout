@@ -6,12 +6,16 @@ import { execFileSync, spawn } from 'node:child_process';
 const KNOWN = [
 	{ id: 'claude', cmd: 'claude', chat: true,  install: 'the Claude Code CLI' },
 	{ id: 'codex',  cmd: 'codex',  chat: true,  install: 'npm i -g @openai/codex' },
-	{ id: 'gemini', cmd: 'agy',    chat: true,  install: 'the Antigravity CLI (agy)' }
+	{ id: 'gemini', cmd: 'agy',    chat: true,  install: 'the Antigravity CLI (agy)' },
+	{ id: 'openrouter', cmd: null, chat: true,  install: 'an OpenRouter API key' }
 ];
 
 let cache = null;
 
 function probe(cmd, env) {
+	if (!cmd) {
+		return { installed: true, version: 'Direct API v1' };
+	}
 	try {
 		const v = execFileSync(cmd, ['--version'], { timeout: 15000, env, stdio: ['ignore', 'pipe', 'ignore'] })
 			.toString().trim().split('\n')[0];
@@ -21,7 +25,7 @@ function probe(cmd, env) {
 	}
 }
 
-/** The detection map: { claude:{id,installed,version,chat,comingSoon,install}, codex:{…}, gemini:{…} }. */
+/** The detection map: { claude:{id,installed,version,chat,comingSoon,install}, codex:{…}, gemini:{…}, openrouter:{…} }. */
 export function detectAgents(env) {
 	if (cache) return cache;
 	const map = {};
@@ -44,6 +48,30 @@ export async function testAgentConnection(agentId, env, authConfig = {}) {
 		if (agentId === 'claude') testEnv.ANTHROPIC_API_KEY = authConfig.apiKey;
 		else if (agentId === 'codex') testEnv.OPENAI_API_KEY = authConfig.apiKey;
 		else if (agentId === 'gemini') testEnv.GEMINI_API_KEY = authConfig.apiKey;
+		else if (agentId === 'openrouter') testEnv.OPENROUTER_API_KEY = authConfig.apiKey;
+	}
+
+	if (agentId === 'openrouter') {
+		const key = authConfig.apiKey || testEnv.OPENROUTER_API_KEY;
+		if (!key) return { ok: false, error: 'OpenRouter API key is missing. Enter an API key in the deck above.', latencyMs: Date.now() - start };
+		const baseUrl = authConfig.baseUrl || testEnv.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1';
+		try {
+			const res = await fetch(`${baseUrl}/auth/key`, {
+				headers: { 'Authorization': `Bearer ${key}` }
+			});
+			const latencyMs = Date.now() - start;
+			if (res.ok) {
+				const data = await res.json().catch(() => ({}));
+				const label = data?.data?.label || 'Key verified';
+				const usage = data?.data?.usage != null ? ` (usage: $${Number(data.data.usage).toFixed(2)})` : '';
+				return { ok: true, latencyMs, output: `${label}${usage}` };
+			} else {
+				const txt = await res.text().catch(() => '');
+				return { ok: false, latencyMs, error: `OpenRouter HTTP ${res.status}: ${txt.slice(0, 200)}` };
+			}
+		} catch (err) {
+			return { ok: false, latencyMs: Date.now() - start, error: `Network error: ${err.message}` };
+		}
 	}
 
 	return new Promise((resolve) => {

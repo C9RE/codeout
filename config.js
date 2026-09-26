@@ -10,7 +10,7 @@ const CODEOUT_HOME = process.env.CODEOUT_HOME || join(homedir(), '.codeout');
 const CONFIG_FILE = join(CODEOUT_HOME, 'config.json');
 
 function writeAtomic(path, data, mode = 0o600) {
-	const tmp = `${path}.tmp`;
+	const tmp = `${path}.${randomBytes(6).toString('hex')}.tmp`;
 	writeFileSync(tmp, data, { mode });
 	renameSync(tmp, path);
 }
@@ -79,6 +79,25 @@ function defaultAgents() {
 			],
 			hasEffort: true,
 			efforts: ['low', 'medium', 'high']
+		},
+		openrouter: {
+			enabled: false,
+			chat: true,
+			name: 'OpenRouter',
+			authMode: 'apiKey', // 'apiKey'
+			apiKey: null,
+			baseUrl: 'https://openrouter.ai/api/v1',
+			defaultModel: 'deepseek/deepseek-r1',
+			allowedModels: [
+				'deepseek/deepseek-r1',
+				'deepseek/deepseek-chat',
+				'anthropic/claude-3.7-sonnet',
+				'meta-llama/llama-3.3-70b-instruct',
+				'qwen/qwen-2.5-coder-32b-instruct',
+				'google/gemini-2.5-pro'
+			],
+			hasEffort: false,
+			efforts: []
 		}
 	};
 }
@@ -223,8 +242,14 @@ export function getAdminConfig(env) {
 
 // Update specific agent's configuration
 export function updateAgentConfig(agentId, patch) {
+	if (typeof agentId !== 'string' || !agentId || agentId === '__proto__' || agentId === 'constructor' || agentId === 'prototype' || !/^[a-zA-Z0-9_-]{1,40}$/.test(agentId)) {
+		throw new Error('Invalid agent ID');
+	}
+	if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+		throw new Error('Invalid patch object');
+	}
 	const cfg = loadConfig();
-	if (!cfg.agents[agentId]) {
+	if (!Object.prototype.hasOwnProperty.call(cfg.agents, agentId) || !cfg.agents[agentId]) {
 		cfg.agents[agentId] = {
 			enabled: true,
 			name: agentId,
@@ -254,9 +279,12 @@ export function updateAgentConfig(agentId, patch) {
 
 // Returns unmasked API key / auth config for execution
 export function getAgentAuth(agentId) {
+	if (typeof agentId !== 'string' || !agentId || agentId === '__proto__' || agentId === 'constructor' || agentId === 'prototype') {
+		return { enabled: false, authMode: 'subscription', apiKey: null, baseUrl: null, defaultModel: null, allowedModels: [], hasEffort: false, efforts: [] };
+	}
 	const cfg = loadConfig();
-	const agent = cfg.agents[agentId];
-	if (!agent) return { authMode: 'subscription', apiKey: null, baseUrl: null };
+	const agent = Object.prototype.hasOwnProperty.call(cfg.agents, agentId) ? cfg.agents[agentId] : null;
+	if (!agent) return { enabled: false, authMode: 'subscription', apiKey: null, baseUrl: null, defaultModel: null, allowedModels: [], hasEffort: false, efforts: [] };
 	return {
 		enabled: agent.enabled !== false,
 		authMode: agent.authMode || 'subscription',

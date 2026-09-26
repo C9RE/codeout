@@ -1,28 +1,24 @@
 // codeout archive: the retention layer behind "archive replaces kill".
 //
 // Archiving a chat session ends the agent but KEEPS the conversation: the session's
-// chat log + uploads move into ~/.codeout/archive/<id>/ next to a meta.json, and an
-// automatic summary is generated so a future reopen can hand the agent context
-// without replaying the whole transcript. Deleting an archive is the one true kill.
+// chat log + uploads move into ~/.codeout/archive/<id>/ next to a meta.json.
+// When unarchiving (reopening), the complete 1:1 chat transcript is restored into
+// the new session so conversation history is preserved with zero loss and zero LLM delay.
+// Deleting an archive is the one true kill.
 //
 // Layout per archived session:
 //   ~/.codeout/archive/<id>/meta.json    { id, name, avatar, cwd, agent, model, effort,
 //                                          permissionMode, created, archivedAt, resumeId,
-//                                          sizeBytes, summary, summaryStatus }
+//                                          sizeBytes }
 //   ~/.codeout/archive/<id>/chat.jsonl   the full retained transcript (moved, not copied)
 //   ~/.codeout/archive/<id>/uploads/     the session's uploaded files (moved, if any)
-//
-// The summarizer matches the session's own agent: a Claude chat is summarized by
-// `claude -p --model haiku`, a Codex chat by `codex exec`, each fed a compacted
-// transcript. It runs async after archive (archive returns immediately); a failed/
-// missed summary stays "pending" and is retried at reopen time.
 
-import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import {
 	existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync,
 	statSync, writeFileSync
 } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 const CODEOUT_HOME = process.env.CODEOUT_HOME || join(homedir(), '.codeout');
@@ -37,9 +33,19 @@ const dirOf = (id) => join(ARCHIVE_DIR, id);
 const metaFile = (id) => join(dirOf(id), 'meta.json');
 const chatFile = (id) => join(dirOf(id), 'chat.jsonl');
 
+/** @returns {string} the absolute path to the archived chat.jsonl */
+export function chatFilePath(id) {
+	return chatFile(id);
+}
+
+/** @returns {string} the absolute path to the archived uploads directory */
+export function uploadsDirPath(id) {
+	return join(dirOf(id), 'uploads');
+}
+
 /** Atomic meta write (tmp + rename) — a crash mid-write must not corrupt the record. */
 function writeMeta(id, meta) {
-	const tmp = metaFile(id) + '.tmp';
+	const tmp = `${metaFile(id)}.${randomBytes(6).toString('hex')}.tmp`;
 	writeFileSync(tmp, JSON.stringify(meta, null, 2), { mode: 0o600 });
 	renameSync(tmp, metaFile(id));
 }
@@ -90,9 +96,7 @@ export function archiveMove(rec, { chatLogFile, uploadsPath }) {
 		created: rec.created,
 		archivedAt: Date.now(),
 		resumeId: rec.resumeId ?? null,
-		sizeBytes: 0,
-		summary: null,
-		summaryStatus: 'pending'
+		sizeBytes: 0
 	};
 	meta.sizeBytes = dirSize(dirOf(rec.id));
 	writeMeta(rec.id, meta);
@@ -112,7 +116,7 @@ export function listArchives() {
 	return out.sort((a, b) => (b.archivedAt || 0) - (a.archivedAt || 0));
 }
 
-/** The one true kill: removes the transcript, uploads, summary — everything. */
+/** The one true kill: removes the transcript, uploads, meta — everything. */
 export function deleteArchive(id) {
 	if (!validId(id)) return false;
 	if (!existsSync(metaFile(id))) return false;
@@ -120,53 +124,8 @@ export function deleteArchive(id) {
 	return true;
 }
 
-// ----- transcript compaction (summarizer input) -----
-
-/**
- * Flatten archived ChatEvents into a compact plain-text transcript for the
- * summarizer. Streamed text deltas share an id — they're stitched back together in
- * arrival order. Tools become one-line labels (the reply text is what matters for a
- * handoff summary; tool output is noise at this altitude). Exported for tests.
- * @param {object[]} events  parsed ChatEvents in log order
- * @param {number} [cap]     keep at most this many chars from the TAIL (recency wins)
- */
-export function compactTranscript(events, cap = 40_000) {
-	/** @type {string[]} */
-	const lines = [];
-	/** @type {Map<string, number>} id -> index in lines, for stitching text deltas */
-	const textAt = new Map();
-	for (const ev of events) {
-		if (!ev || typeof ev !== 'object') continue;
-		switch (ev.t) {
-			case 'user':
-				lines.push(`User${ev.senderName ? ` (${ev.senderName})` : ''}: ${ev.text ?? ''}`);
-				break;
-			case 'text': {
-				const at = ev.id != null ? textAt.get(ev.id) : undefined;
-				if (at != null) lines[at] += ev.text ?? '';
-				else { textAt.set(ev.id, lines.length); lines.push(`Assistant: ${ev.text ?? ''}`); }
-				break;
-			}
-			case 'tool':
-				// One line per tool CALL (the "running" emit); result emits carry no name.
-				if (ev.name) lines.push(`[tool] ${ev.name}${ev.title ? `: ${ev.title}` : ''}`);
-				break;
-			case 'system':
-				if (ev.text && !ev.text.includes(' · ')) lines.push(`[system] ${ev.text}`);
-				break;
-			case 'error':
-				lines.push(`[error] ${ev.message ?? ''}`);
-				break;
-			default:
-				break; // thinking/stats/typing/etc — not summary input
-		}
-	}
-	const joined = lines.join('\n');
-	return joined.length > cap ? joined.slice(-cap) : joined;
-}
-
 /** Read + parse the archived transcript (corrupt lines skipped, like the live log). */
-function readArchivedEvents(id) {
+export function readArchivedEvents(id) {
 	let raw = '';
 	try { raw = readFileSync(chatFile(id), 'utf8'); } catch { return []; }
 	const out = [];
@@ -175,119 +134,4 @@ function readArchivedEvents(id) {
 		try { out.push(JSON.parse(line)); } catch { /* skip corrupt line */ }
 	}
 	return out;
-}
-
-const SUMMARY_PROMPT = [
-	'You are writing a HANDOFF SUMMARY of the coding-agent conversation below, for a future',
-	'session of the same agent to pick the work back up. Write it as briefing prose, max 400',
-	'words, covering: the goal, the current state (what was done and verified), key decisions',
-	'made and why, files/paths touched, and unfinished work / concrete next steps. No greetings,',
-	'no meta-commentary — start directly with the substance.'
-].join(' ');
-
-const SUMMARY_TIMEOUT_MS = 120_000;
-const SUMMARY_MODEL = 'haiku'; // cheap + fast; a summary doesn't need a frontier model
-let summarySeq = 0; // unique-per-process suffix for codex's -o output file
-
-/**
- * Default runner: one-shot `claude -p --model haiku` with the prompt on stdin.
- * Injectable (see summarize) so tests never spawn a real agent.
- * @returns {Promise<string>} the summary text
- */
-function runClaudeOneShot(prompt, env) {
-	return new Promise((resolve, reject) => {
-		const child = spawn('claude', ['-p', '--model', SUMMARY_MODEL], {
-			env, stdio: ['pipe', 'pipe', 'pipe']
-		});
-		let out = '', err = '';
-		const timer = setTimeout(() => {
-			try { child.kill('SIGKILL'); } catch { /* gone */ }
-			reject(new Error('summary timed out'));
-		}, SUMMARY_TIMEOUT_MS);
-		timer.unref?.();
-		child.stdout.on('data', (d) => { out += d; });
-		child.stderr.on('data', (d) => { err += d; });
-		child.on('error', (e) => { clearTimeout(timer); reject(e); });
-		child.on('close', (code) => {
-			clearTimeout(timer);
-			if (code === 0 && out.trim()) resolve(out.trim());
-			else reject(new Error(`summarizer exited ${code}: ${err.slice(0, 400)}`));
-		});
-		child.stdin.end(`${SUMMARY_PROMPT}\n\n--- CONVERSATION ---\n${prompt}`);
-	});
-}
-
-/**
- * Codex runner: one-shot `codex exec` (read-only sandbox) with the prompt on stdin and
- * the final message captured via -o, so the summary is clean text with no tool chatter.
- * Uses the account's default model (the cheap mini isn't available on ChatGPT-auth codex).
- * @returns {Promise<string>} the summary text
- */
-function runCodexOneShot(prompt, env) {
-	return new Promise((resolve, reject) => {
-		const outFile = join(tmpdir(), `codeout-summary-${process.pid}-${summarySeq++}.txt`);
-		const cleanup = () => { try { rmSync(outFile, { force: true }); } catch { /* already gone */ } };
-		const child = spawn('codex', ['exec', '-s', 'read-only', '--skip-git-repo-check', '-o', outFile], {
-			env, stdio: ['pipe', 'pipe', 'pipe']
-		});
-		let err = '';
-		const timer = setTimeout(() => {
-			try { child.kill('SIGKILL'); } catch { /* gone */ }
-			cleanup();
-			reject(new Error('summary timed out'));
-		}, SUMMARY_TIMEOUT_MS);
-		timer.unref?.();
-		child.stderr.on('data', (d) => { err += d; });
-		child.on('error', (e) => { clearTimeout(timer); cleanup(); reject(e); });
-		child.on('close', (code) => {
-			clearTimeout(timer);
-			let text = '';
-			try { if (existsSync(outFile)) text = readFileSync(outFile, 'utf8').trim(); } catch { /* fall through */ }
-			cleanup();
-			if (code === 0 && text) resolve(text);
-			else reject(new Error(`codex summarizer exited ${code}: ${err.slice(0, 400)}`));
-		});
-		child.stdin.end(`${SUMMARY_PROMPT}\n\n--- CONVERSATION ---\n${prompt}`);
-	});
-}
-
-/**
- * Pick the summary runner to match the archived session's agent: a Codex chat is
- * summarized by Codex, everything else (Claude, or an unknown agent) by Claude/haiku.
- * @param {string} [agent]
- */
-function runnerForAgent(agent) {
-	return agent === 'codex' ? runCodexOneShot : runClaudeOneShot;
-}
-
-/**
- * Generate (or re-generate) the archive's summary and persist it into meta.json.
- * Safe to fire-and-forget after archive; awaited at reopen when still pending.
- * @param {string} id
- * @param {{env?: object, runner?: (prompt:string, env:object)=>Promise<string>}} [opts] runner defaults to the agent-matched one
- * @returns {Promise<string|null>} the summary, or null on failure (status stays pending)
- */
-export async function summarize(id, { env = process.env, runner = null } = {}) {
-	const meta = readArchiveMeta(id);
-	if (!meta) return null;
-	if (meta.summary && meta.summaryStatus === 'done') return meta.summary;
-	const events = readArchivedEvents(id);
-	if (events.length === 0) {
-		// Nothing to summarize (empty chat archived) — mark done so reopen doesn't wait.
-		meta.summary = null; meta.summaryStatus = 'done';
-		writeMeta(id, meta);
-		return null;
-	}
-	const run = runner ?? runnerForAgent(meta.agent);
-	try {
-		const summary = (await run(compactTranscript(events), env)).slice(0, 8_000);
-		// Re-read before write: a concurrent delete must not resurrect the folder.
-		if (!readArchiveMeta(id)) return null;
-		meta.summary = summary; meta.summaryStatus = 'done';
-		writeMeta(id, meta);
-		return summary;
-	} catch (e) {
-		console.error('[codeout] archive summary failed (stays pending, retried at reopen):', e?.message ?? e);
-		return null;
-	}
 }

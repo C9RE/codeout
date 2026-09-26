@@ -811,7 +811,13 @@
 			'gemini-3.1-pro': 'Gemini 3.1 Pro (Deep Architect)',
 			'claude-sonnet-4-6': 'Claude Sonnet 4.6 (Antigravity Thinking)',
 			'claude-opus-4-6-thinking': 'Claude Opus 4.6 (Antigravity Thinking)',
-			'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)'
+			'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)',
+			'deepseek/deepseek-r1': 'DeepSeek R1 (Open Reasoning)',
+			'deepseek/deepseek-chat': 'DeepSeek V3 (Fast / Cheap)',
+			'anthropic/claude-3.7-sonnet': 'Claude 3.7 Sonnet (OpenRouter)',
+			'meta-llama/llama-3.3-70b-instruct': 'Llama 3.3 70B (Open Source)',
+			'qwen/qwen-2.5-coder-32b-instruct': 'Qwen 2.5 Coder 32B (Code Specialist)',
+			'google/gemini-2.5-pro': 'Gemini 2.5 Pro (Direct / Multimodal)'
 		};
 
 		const PROVIDER_INFO = {
@@ -829,8 +835,23 @@
 				name: 'Gemini (Antigravity)',
 				desc: 'Google Antigravity agent (Gemini 3.8 / 3.7 / 3.1 Pro via agy)',
 				icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3L12 3z"/></svg>`
+			},
+			openrouter: {
+				name: 'OpenRouter',
+				desc: '300+ AI models via unified API (DeepSeek R1/V3, Llama 3.3, Qwen Coder, Claude, Gemini)',
+				icon: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>`
 			}
 		};
+
+		function esc(s) {
+			if (s == null) return '';
+			return String(s)
+				.replace(/&/g, '&amp;')
+				.replace(/</g, '&lt;')
+				.replace(/>/g, '&gt;')
+				.replace(/"/g, '&quot;')
+				.replace(/'/g, '&#39;');
+		}
 
 		function getHeaders() {
 			const h = { 'content-type': 'application/json' };
@@ -876,7 +897,7 @@
 					removeBtn.style.display = 'none';
 				}
 			} catch (e) {
-				document.getElementById('providersGrid').innerHTML = `<div class="card" style="grid-column: 1/-1; color: var(--err)">Failed to load configuration: ${e.message}</div>`;
+				document.getElementById('providersGrid').innerHTML = `<div class="card" style="grid-column: 1/-1; color: var(--err)">Failed to load configuration: ${esc(e.message)}</div>`;
 			}
 		}
 
@@ -892,7 +913,7 @@
 				const info = PROVIDER_INFO[id] || { name: id, desc: '', icon: '' };
 				const card = document.createElement('div');
 				card.className = 'card';
-				card.id = `card-${id}`;
+				card.id = `card-${esc(id)}`;
 
 				const isApiKey = agent.authMode === 'apiKey';
 				const isInstalled = agent.installed;
@@ -903,15 +924,15 @@
 							<div class="agent-icon">${info.icon}</div>
 							<div>
 								<div class="agent-name">
-									<span>${info.name}</span>
-									${isInstalled ? `<span class="badge badge-ok tabular">v${agent.version || 'installed'}</span>` : `<span class="badge badge-err">CLI Missing</span>`}
+									<span>${esc(info.name)}</span>
+									${isInstalled ? `<span class="badge badge-ok tabular">v${esc(agent.version || 'installed')}</span>` : `<span class="badge badge-err">CLI Missing</span>`}
 								</div>
-								<div class="agent-desc">${info.desc}</div>
+								<div class="agent-desc">${esc(info.desc)}</div>
 							</div>
 						</div>
 
 						<label class="toggle-switch">
-							<input type="checkbox" ${agent.enabled ? 'checked' : ''} onchange="toggleAgent('${id}', this.checked)" />
+							<input type="checkbox" ${agent.enabled ? 'checked' : ''} onchange="toggleAgent('${esc(id)}', this.checked)" />
 							<div class="toggle-track"><div class="toggle-thumb"></div></div>
 						</label>
 					</div>
@@ -921,8 +942,8 @@
 							<span>Authentication</span>
 						</div>
 						<div class="mode-pill-group">
-							<button type="button" class="mode-pill ${!isApiKey ? 'active' : ''}" onclick="setAuthMode('${id}', 'subscription')">Subscription / OAuth</button>
-							<button type="button" class="mode-pill ${isApiKey ? 'active pink' : ''}" onclick="setAuthMode('${id}', 'apiKey')">Direct API Key</button>
+							<button type="button" class="mode-pill ${!isApiKey ? 'active' : ''}" onclick="setAuthMode('${esc(id)}', 'subscription')">Subscription / OAuth</button>
+							<button type="button" class="mode-pill ${isApiKey ? 'active pink' : ''}" onclick="setAuthMode('${esc(id)}', 'apiKey')">Direct API Key</button>
 						</div>
 					</div>
 
@@ -931,34 +952,34 @@
 							<div class="input-label">
 								<span>API Key</span>
 								<span class="mono" style="font-size:10px; color:${agent.hasApiKey ? 'var(--ok)' : 'var(--err)'}">
-									${agent.hasApiKey ? agent.apiKeyMasked : 'No key configured'}
+									${esc(agent.hasApiKey ? agent.apiKeyMasked : 'No key configured')}
 								</span>
 							</div>
 							<div class="input-row">
-								<input type="password" id="input-key-${id}" placeholder="${agent.hasApiKey ? 'Enter new key to replace' : 'sk-...'}" />
-								<button type="button" class="btn btn-primary" onclick="saveKey('${id}')">Save</button>
+								<input type="password" id="input-key-${esc(id)}" placeholder="${agent.hasApiKey ? 'Enter new key to replace' : 'sk-...'}" />
+								<button type="button" class="btn btn-primary" onclick="saveKey('${esc(id)}')">Save</button>
 							</div>
 						</div>
 					` : `
 						<div style="font-size:11.5px; color:var(--muted); background:var(--bg); border:1px solid var(--border-soft); padding:8px 12px; border-radius:6px;">
-							Uses the host CLI login (~/.${id === 'claude' ? 'claude.json' : id === 'codex' ? 'codex' : 'gemini'}). Zero API token charges.
+							Uses the host CLI login (~/.${esc(id === 'claude' ? 'claude.json' : id === 'codex' ? 'codex' : 'gemini')}). Zero API token charges.
 						</div>
 					`}
 
 					${agent.allowedModels && agent.allowedModels.length ? `
 						<div class="input-group">
 							<div class="input-label"><span>Default Model</span></div>
-							<select onchange="saveModel('${id}', this.value)">
-								${agent.allowedModels.map(m => `<option value="${m}" ${m === agent.defaultModel ? 'selected' : ''}>${MODEL_LABELS[m] || m}</option>`).join('')}
+							<select onchange="saveModel('${esc(id)}', this.value)">
+								${agent.allowedModels.map(m => `<option value="${esc(m)}" ${m === agent.defaultModel ? 'selected' : ''}>${esc(MODEL_LABELS[m] || m)}</option>`).join('')}
 							</select>
 						</div>
 					` : ''}
 
 					<div class="card-footer">
-						<button type="button" class="btn btn-ghost" id="test-btn-${id}" onclick="runTest('${id}')">
+						<button type="button" class="btn btn-ghost" id="test-btn-${esc(id)}" onclick="runTest('${esc(id)}')">
 							<span>Test Connection</span>
 						</button>
-						<div class="result-readout" id="test-res-${id}"></div>
+						<div class="result-readout" id="test-res-${esc(id)}"></div>
 					</div>
 				`;
 				grid.appendChild(card);
@@ -970,7 +991,7 @@
 
 		async function patchAgent(id, patch) {
 			try {
-				const r = await fetch(`/api/config/agents/${id}`, {
+				const r = await fetch(`/api/config/agents/${encodeURIComponent(id)}`, {
 					method: 'POST',
 					headers: getHeaders(),
 					body: JSON.stringify(patch)
@@ -999,18 +1020,18 @@
 			res.innerHTML = '';
 
 			try {
-				const r = await fetch(`/api/config/agents/${id}/test`, {
+				const r = await fetch(`/api/config/agents/${encodeURIComponent(id)}/test`, {
 					method: 'POST',
 					headers: getHeaders()
 				});
 				const data = await r.json();
 				if (data.ok) {
-					res.innerHTML = `<span style="color:var(--ok)">✓ Connected (${data.latencyMs}ms)</span>`;
+					res.innerHTML = `<span style="color:var(--ok)">✓ Connected (${esc(data.latencyMs)}ms)</span>`;
 				} else {
-					res.innerHTML = `<span style="color:var(--err)" title="${data.error}">✗ ${data.error || 'Failed'}</span>`;
+					res.innerHTML = `<span style="color:var(--err)" title="${esc(data.error)}">✗ ${esc(data.error || 'Failed')}</span>`;
 				}
 			} catch (e) {
-				res.innerHTML = `<span style="color:var(--err)">✗ Error: ${e.message}</span>`;
+				res.innerHTML = `<span style="color:var(--err)">✗ Error: ${esc(e.message)}</span>`;
 			} finally {
 				btn.disabled = false;
 				btn.innerHTML = `<span>Test Connection</span>`;
@@ -1064,19 +1085,19 @@
 					<tr>
 						<td>
 							<div style="font-weight:600; display:flex; align-items:center; gap:6px;">
-								<span>${d.name || 'Unnamed Device'}</span>
+								<span>${esc(d.name || 'Unnamed Device')}</span>
 								${d.current ? `<span class="badge badge-pink">This Browser</span>` : ''}
 							</div>
 						</td>
-						<td><code class="mono" style="color:var(--muted); font-size:11px;">${d.id}</code></td>
-						<td class="tabular" style="color:var(--muted); font-size:11.5px;">${d.paired ? new Date(d.paired).toLocaleDateString() + ' ' + new Date(d.paired).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Unknown'}</td>
+						<td><code class="mono" style="color:var(--muted); font-size:11px;">${esc(d.id)}</code></td>
+						<td class="tabular" style="color:var(--muted); font-size:11.5px;">${d.paired ? esc(new Date(d.paired).toLocaleDateString() + ' ' + new Date(d.paired).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})) : 'Unknown'}</td>
 						<td style="text-align: right;">
-							<button class="btn btn-danger" style="height:24px; padding:0 8px; font-size:10.5px;" onclick="revokeDevice('${d.id}')">Revoke</button>
+							<button class="btn btn-danger" style="height:24px; padding:0 8px; font-size:10.5px;" onclick="revokeDevice('${esc(d.id)}')">Revoke</button>
 						</td>
 					</tr>
 				`).join('');
 			} catch (e) {
-				body.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--err); padding: 24px;">Failed to load devices: ${e.message}</td></tr>`;
+				body.innerHTML = `<tr><td colspan="4" style="text-align: center; color: var(--err); padding: 24px;">Failed to load devices: ${esc(e.message)}</td></tr>`;
 			}
 		}
 
@@ -1115,7 +1136,7 @@
 				document.getElementById('pwConfirm').value = '';
 				await loadData();
 			} catch (e) {
-				st.innerHTML = `<span style="color:var(--err)">Error: ${e.message}</span>`;
+				st.innerHTML = `<span style="color:var(--err)">Error: ${esc(e.message)}</span>`;
 			}
 		}
 
@@ -1134,7 +1155,7 @@
 				st.innerHTML = '<span style="color:var(--ok)">✓ Password protection disabled</span>';
 				await loadData();
 			} catch (e) {
-				st.innerHTML = `<span style="color:var(--err)">Error: ${e.message}</span>`;
+				st.innerHTML = `<span style="color:var(--err)">Error: ${esc(e.message)}</span>`;
 			}
 		}
 

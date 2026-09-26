@@ -17,7 +17,7 @@
 //   { t:'system',   text }
 //   { t:'slash-commands', commands:[...] }   // agent's available `/` commands (init), for autocomplete
 // `parent` (when present) = the Task tool_use id a subagent's activity nests under.
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, appendFileSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -134,7 +134,7 @@ export class PersistentChatLog extends ChatLog {
 		try {
 			const lines = this.items.map((it) => JSON.stringify(it.ev)).join('\n');
 			const body = lines ? lines + '\n' : '';
-			const tmp = this.file + '.tmp';
+			const tmp = `${this.file}.${randomBytes(6).toString('hex')}.tmp`;
 			writeFileSync(tmp, body, { mode: 0o600 });
 			renameSync(tmp, this.file);
 			this.fileBytes = Buffer.byteLength(body);

@@ -94,6 +94,11 @@ export function isTunnelRequest(req) {
  * remote address is treated as NON-local.
  * @param {import('node:http').IncomingMessage} req
  */
+export function isLoopbackRequest(req) {
+	const ip = (req?.socket?.remoteAddress || '').replace(/^::ffff:/, '');
+	return ip === '127.0.0.1' || ip === '::1';
+}
+
 export function isLocalRequest(req) {
 	const ip = (req?.socket?.remoteAddress || '').replace(/^::ffff:/, ''); // unwrap IPv4-mapped IPv6
 	if (!ip) return false;
